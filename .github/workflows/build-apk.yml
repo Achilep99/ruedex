@@ -29,7 +29,9 @@ jobs:
           cache: true
 
       - name: Creer les fichiers Android manquants
-        run: flutter create --platforms=android --org com.ruedex .
+        run: |
+          flutter create --platforms=android --org com.ruedex .
+          rm -f test/widget_test.dart
 
       - name: Configurer Android
         shell: pwsh
