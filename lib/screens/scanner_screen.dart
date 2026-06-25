@@ -114,7 +114,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       setState(() => _realPosition = position);
       _positionSubscription = _locationService.positionStream().listen(
         (position) {
-          if (mounted && _manualPoint == null) setState(() => _realPosition = position);
+          if (mounted && _manualPoint == null) {
+            setState(() => _realPosition = position);
+          }
         },
         onError: (_) {},
       );
@@ -208,7 +210,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     } finally {
       if (framedImageIsTemporary) {
         final temporaryFile = File(framedImagePath);
-        if (await temporaryFile.exists()) await temporaryFile.delete();
+        if (await temporaryFile.exists()) {
+          await temporaryFile.delete();
+        }
       }
     }
     final candidates = _matcher.findCandidates(
@@ -669,7 +673,9 @@ class _CandidateCard extends StatelessWidget {
       color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
       child: ListTile(
         onTap: onTap,
-        leading: Radio<bool>(value: true, groupValue: selected, onChanged: (_) => onTap()),
+        leading: Icon(
+          selected ? Icons.radio_button_checked : Icons.radio_button_unchecked,
+        ),
         title: Text(candidate.street.officialName),
         subtitle: Text(
           'Score ${candidate.percentage} % · nom ${candidate.textPercentage} % · couverture ${candidate.coveragePercentage} %'

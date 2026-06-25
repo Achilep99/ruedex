@@ -84,8 +84,12 @@ class _PokedexScreenState extends State<PokedexScreen> {
   @override
   Widget build(BuildContext context) {
     final visible = widget.streets.where((street) {
-      if (_query.isEmpty) return true;
-      if (!widget.developerMode && !_discoveredIds.contains(street.id)) return false;
+      if (_query.isEmpty) {
+        return true;
+      }
+      if (!widget.developerMode && !_discoveredIds.contains(street.id)) {
+        return false;
+      }
       return street.officialName.toLowerCase().contains(_query.toLowerCase());
     }).toList(growable: false);
 
