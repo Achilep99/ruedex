@@ -38,7 +38,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _reload() async {
     final ids = await widget.discoveryStore.loadDiscoveredIds();
     final developerMode = await widget.settingsStore.loadDeveloperMode();
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _discoveredIds = ids;
       _developerMode = developerMode;
@@ -108,7 +110,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   value = next;
                   setSheetState(() {});
                   await widget.settingsStore.setDeveloperMode(next);
-                  if (mounted) setState(() => _developerMode = next);
+                  if (mounted) setState(() {
+                    => _developerMode = next);
+                  }
                 },
               ),
             ],

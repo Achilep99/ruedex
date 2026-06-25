@@ -148,7 +148,9 @@ class _ParisStreetPainter extends CustomPainter {
           ? paths[street.rarity]!
           : undiscoveredPath;
       for (final segment in street.segments) {
-        if (segment.length < 2) continue;
+        if (segment.length < 2) {
+          continue;
+        }
         final first = projection.toOffset(segment.first);
         target.moveTo(first.dx, first.dy);
         for (final point in segment.skip(1)) {

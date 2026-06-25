@@ -29,7 +29,9 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
 
   Future<void> _load() async {
     final ids = await widget.discoveryStore.loadDiscoveredIds();
-    if (mounted) setState(() => _discoveredIds = ids);
+    if (mounted) setState(() {
+      => _discoveredIds = ids);
+    }
   }
 
   @override

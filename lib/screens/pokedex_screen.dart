@@ -32,7 +32,9 @@ class _PokedexScreenState extends State<PokedexScreen> {
 
   Future<void> _load() async {
     final ids = await widget.discoveryStore.loadDiscoveredIds();
-    if (mounted) setState(() => _discoveredIds = ids);
+    if (mounted) setState(() {
+      => _discoveredIds = ids);
+    }
   }
 
   Future<void> _reset() async {
@@ -42,7 +44,9 @@ class _PokedexScreenState extends State<PokedexScreen> {
 
   Future<void> _showDetails(StreetEntry street, bool discovered) async {
     final date = discovered ? await widget.discoveryStore.discoveryDate(street.id) : null;
-    if (!mounted) return;
+    if (!mounted) {
+      return;
+    }
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,

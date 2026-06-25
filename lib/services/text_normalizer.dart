@@ -90,18 +90,30 @@ class TextNormalizer {
     final characters = input.split('');
 
     bool isLetterAt(int index) {
-      if (index < 0 || index >= characters.length) return false;
+      if (index < 0 || index >= characters.length) {
+        return false;
+      }
       return RegExp(r'[A-Z]').hasMatch(characters[index]);
     }
 
     for (var index = 0; index < characters.length; index++) {
       final character = characters[index];
       final touchesLetter = isLetterAt(index - 1) || isLetterAt(index + 1);
-      if (!touchesLetter) continue;
-      if (character == '0') characters[index] = 'O';
-      if (character == '1') characters[index] = 'I';
-      if (character == '5') characters[index] = 'S';
-      if (character == '8') characters[index] = 'B';
+      if (!touchesLetter) {
+        continue;
+      }
+      if (character == '0') {
+        characters[index] = 'O';
+      }
+      if (character == '1') {
+        characters[index] = 'I';
+      }
+      if (character == '5') {
+        characters[index] = 'S';
+      }
+      if (character == '8') {
+        characters[index] = 'B';
+      }
     }
     return characters.join();
   }
@@ -142,7 +154,9 @@ class TextNormalizer {
     final fragments = <String>{};
     fragments.addAll(normalizedLines);
     final whole = normalize(rawText);
-    if (whole.isNotEmpty) fragments.add(whole);
+    if (whole.isNotEmpty) {
+      fragments.add(whole);
+    }
 
     for (var index = 0; index < normalizedLines.length - 1; index++) {
       fragments.add('${normalizedLines[index]} ${normalizedLines[index + 1]}');
