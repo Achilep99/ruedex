@@ -29,7 +29,8 @@ class ParisStreetMap extends StatefulWidget {
 }
 
 class _ParisStreetMapState extends State<ParisStreetMap> {
-  final TransformationController _transformationController = TransformationController();
+  final TransformationController _transformationController =
+      TransformationController();
 
   @override
   void dispose() {
@@ -58,7 +59,9 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
                     onTapUp: widget.onPointSelected == null
                         ? null
                         : (details) {
-                            widget.onPointSelected!(projection.toGeo(details.localPosition));
+                            widget.onPointSelected!(
+                              projection.toGeo(details.localPosition),
+                            );
                           },
                     child: CustomPaint(
                       size: size,
@@ -80,7 +83,9 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
           right: 10,
           child: IconButton.filledTonal(
             tooltip: 'Recentrer la carte',
-            onPressed: () => _transformationController.value = Matrix4.identity(),
+            onPressed: () {
+              _transformationController.value = Matrix4.identity();
+            },
             icon: const Icon(Icons.center_focus_strong),
           ),
         ),
@@ -95,26 +100,87 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
   }
 }
 
+/// Projection locale adaptée à Paris.
+///
+/// Deux corrections sont importantes :
+/// - la longitude est multipliée par cos(latitude), car un degré de longitude
+///   est plus court qu'un degré de latitude à Paris ;
+/// - un seul facteur d'échelle est utilisé pour les deux axes, afin de ne
+///   jamais étirer la ville pour remplir l'écran.
 class _MapProjection {
-  const _MapProjection(this.bounds, this.size);
+  _MapProjection(this.bounds, this.size) {
+    final centerLatitude =
+        (bounds.minLatitude + bounds.maxLatitude) / 2.0;
+    _centerLongitude =
+        (bounds.minLongitude + bounds.maxLongitude) / 2.0;
+    _longitudeFactor = math.cos(centerLatitude * math.pi / 180.0);
+
+    _minProjectedX =
+        (bounds.minLongitude - _centerLongitude) * _longitudeFactor;
+    _maxProjectedX =
+        (bounds.maxLongitude - _centerLongitude) * _longitudeFactor;
+
+    final projectedWidth = math
+        .max(0.000001, _maxProjectedX - _minProjectedX)
+        .toDouble();
+    final projectedHeight = math
+        .max(
+          0.000001,
+          bounds.maxLatitude - bounds.minLatitude,
+        )
+        .toDouble();
+
+    const padding = 18.0;
+    final availableWidth =
+        math.max(1.0, size.width - padding * 2).toDouble();
+    final availableHeight =
+        math.max(1.0, size.height - padding * 2).toDouble();
+
+    _scale = math
+        .min(
+          availableWidth / projectedWidth,
+          availableHeight / projectedHeight,
+        )
+        .toDouble();
+
+    final renderedWidth = projectedWidth * _scale;
+    final renderedHeight = projectedHeight * _scale;
+    _offsetX = (size.width - renderedWidth) / 2.0;
+    _offsetY = (size.height - renderedHeight) / 2.0;
+  }
 
   final GeoBounds bounds;
   final Size size;
 
+  late final double _centerLongitude;
+  late final double _longitudeFactor;
+  late final double _minProjectedX;
+  late final double _maxProjectedX;
+  late final double _scale;
+  late final double _offsetX;
+  late final double _offsetY;
+
   Offset toOffset(GeoPoint point) {
-    final longitudeSpan = math.max(0.000001, bounds.maxLongitude - bounds.minLongitude);
-    final latitudeSpan = math.max(0.000001, bounds.maxLatitude - bounds.minLatitude);
-    final x = (point.longitude - bounds.minLongitude) / longitudeSpan * size.width;
-    final y = (bounds.maxLatitude - point.latitude) / latitudeSpan * size.height;
+    final projectedX =
+        (point.longitude - _centerLongitude) * _longitudeFactor;
+    final x = _offsetX + (projectedX - _minProjectedX) * _scale;
+    final y = _offsetY +
+        (bounds.maxLatitude - point.latitude) * _scale;
     return Offset(x, y);
   }
 
   GeoPoint toGeo(Offset offset) {
-    final longitude = bounds.minLongitude + offset.dx / size.width *
-        (bounds.maxLongitude - bounds.minLongitude);
-    final latitude = bounds.maxLatitude - offset.dy / size.height *
-        (bounds.maxLatitude - bounds.minLatitude);
-    return GeoPoint(latitude, longitude);
+    final projectedX =
+        _minProjectedX + (offset.dx - _offsetX) / _scale;
+    final longitude =
+        _centerLongitude + projectedX / _longitudeFactor;
+    final latitude =
+        bounds.maxLatitude - (offset.dy - _offsetY) / _scale;
+
+    return GeoPoint(
+      latitude.clamp(bounds.minLatitude, bounds.maxLatitude).toDouble(),
+      longitude.clamp(bounds.minLongitude, bounds.maxLongitude).toDouble(),
+    );
   }
 }
 
@@ -148,7 +214,9 @@ class _ParisStreetPainter extends CustomPainter {
           ? paths[street.rarity]!
           : undiscoveredPath;
       for (final segment in street.segments) {
-        if (segment.length < 2) continue;
+        if (segment.length < 2) {
+          continue;
+        }
         final first = projection.toOffset(segment.first);
         target.moveTo(first.dx, first.dy);
         for (final point in segment.skip(1)) {
@@ -190,7 +258,8 @@ class _ParisStreetPainter extends CustomPainter {
   bool shouldRepaint(covariant _ParisStreetPainter oldDelegate) {
     return oldDelegate.discoveredIds != discoveredIds ||
         oldDelegate.selectedPoint != selectedPoint ||
-        oldDelegate.streets != streets;
+        oldDelegate.streets != streets ||
+        oldDelegate.projection.size != projection.size;
   }
 }
 

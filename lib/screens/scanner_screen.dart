@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
@@ -62,6 +63,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   bool _completed = false;
   bool _timedOut = false;
   bool _cameraPaused = false;
+  bool _ignoreVisualPlateFilter = false;
   String _status = 'Initialisation de la caméra et du GPS…';
   String? _error;
   int _attemptCount = 0;
@@ -101,7 +103,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       _initializing = false;
       _status = _currentPoint == null
           ? 'GPS indisponible : impossible de valider une rue.'
-          : 'Recherche d’une plaque… reste immobile.';
+          : 'Recherche d’une plaque… vise-la approximativement et reste immobile.';
     });
     _scanStartedAt = DateTime.now();
     _scanLoop();
@@ -183,7 +185,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         if (mounted) {
           setState(() {
             _timedOut = true;
-            _status = 'Plaque non reconnue. Rapproche-toi, cadre mieux la plaque ou améliore la lumière.';
+            _status = 'Plaque non reconnue. Rapproche-toi, garde-la visible ou améliore la lumière.';
           });
         }
       }
@@ -230,6 +232,11 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       requireGps: true,
     );
 
+    final visualFilterBypassed =
+        widget.developerMode && _ignoreVisualPlateFilter;
+    final plateAccepted =
+        plateCheck.isProbablePlate || visualFilterBypassed;
+
     if (!mounted) return;
     setState(() {
       _lastOcr = ocr;
@@ -237,12 +244,17 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       _candidates = candidates;
       _decision = decision;
       _selectedCandidate = candidates.isEmpty ? null : candidates.first;
-      _status = plateCheck.isProbablePlate
-          ? decision.reason
-          : 'Le cadre ne ressemble pas assez à une plaque de rue.';
+      if (plateAccepted) {
+        _status = visualFilterBypassed
+            ? 'Filtre visuel ignoré en mode développeur. ${decision.reason}'
+            : decision.reason;
+      } else {
+        _status =
+            'Aucune zone ne ressemble encore assez à une plaque de rue.';
+      }
     });
 
-    if (!plateCheck.isProbablePlate || !decision.accepted || decision.best == null) {
+    if (!plateAccepted || !decision.accepted || decision.best == null) {
       _stableStreetId = null;
       _stableCount = 0;
       return;
@@ -308,7 +320,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       _attemptCount = 0;
       _stableStreetId = null;
       _stableCount = 0;
-      _status = 'Recherche d’une plaque… reste immobile.';
+      _status = 'Recherche d’une plaque… vise-la approximativement et reste immobile.';
       _error = null;
     });
     _scanStartedAt = DateTime.now();
@@ -488,6 +500,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
                 onUseRealGps: _useRealGps,
                 onPickImage: _pickDeveloperImage,
                 onTestText: _testSimulatedText,
+                ignoreVisualPlateFilter: _ignoreVisualPlateFilter,
+                onIgnoreVisualPlateFilterChanged: (value) {
+                  setState(() => _ignoreVisualPlateFilter = value);
+                },
               ),
               if (_lastOcr != null || _lastPlateCheck != null) ...[
                 const SizedBox(height: 14),
@@ -529,20 +545,76 @@ class _ScannerFrameOverlay extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return IgnorePointer(
-      child: Center(
-        child: FractionallySizedBox(
-          widthFactor: 0.88,
-          heightFactor: 0.31,
-          child: Container(
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.white, width: 2),
-              borderRadius: BorderRadius.circular(16),
+      child: Stack(
+        children: [
+          Positioned.fill(
+            child: CustomPaint(painter: _ScannerGuidePainter()),
+          ),
+          const Positioned(
+            top: 14,
+            left: 18,
+            right: 18,
+            child: Text(
+              'La plaque peut être décalée, inclinée ou de forme carrée',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                shadows: [Shadow(color: Colors.black, blurRadius: 5)],
+              ),
             ),
           ),
-        ),
+        ],
       ),
     );
   }
+}
+
+class _ScannerGuidePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final guide = Rect.fromCenter(
+      center: size.center(Offset.zero),
+      width: size.width * 0.90,
+      height: size.height * 0.56,
+    );
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.92)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.4
+      ..strokeCap = StrokeCap.round;
+    final corner =
+        math.min(34.0, guide.shortestSide * 0.15).toDouble();
+
+    canvas.drawLine(guide.topLeft, guide.topLeft + Offset(corner, 0), paint);
+    canvas.drawLine(guide.topLeft, guide.topLeft + Offset(0, corner), paint);
+    canvas.drawLine(guide.topRight, guide.topRight - Offset(corner, 0), paint);
+    canvas.drawLine(guide.topRight, guide.topRight + Offset(0, corner), paint);
+    canvas.drawLine(
+      guide.bottomLeft,
+      guide.bottomLeft + Offset(corner, 0),
+      paint,
+    );
+    canvas.drawLine(
+      guide.bottomLeft,
+      guide.bottomLeft - Offset(0, corner),
+      paint,
+    );
+    canvas.drawLine(
+      guide.bottomRight,
+      guide.bottomRight - Offset(corner, 0),
+      paint,
+    );
+    canvas.drawLine(
+      guide.bottomRight,
+      guide.bottomRight - Offset(0, corner),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ScannerGuidePainter oldDelegate) => false;
 }
 
 class _DeveloperPanel extends StatelessWidget {
@@ -553,6 +625,8 @@ class _DeveloperPanel extends StatelessWidget {
     required this.onUseRealGps,
     required this.onPickImage,
     required this.onTestText,
+    required this.ignoreVisualPlateFilter,
+    required this.onIgnoreVisualPlateFilterChanged,
   });
 
   final GeoPoint? currentPoint;
@@ -561,6 +635,8 @@ class _DeveloperPanel extends StatelessWidget {
   final VoidCallback onUseRealGps;
   final VoidCallback onPickImage;
   final VoidCallback onTestText;
+  final bool ignoreVisualPlateFilter;
+  final ValueChanged<bool> onIgnoreVisualPlateFilterChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -602,7 +678,17 @@ class _DeveloperPanel extends StatelessWidget {
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: 10),
+          SwitchListTile.adaptive(
+            contentPadding: EdgeInsets.zero,
+            title: const Text('Ignorer le filtre visuel de plaque'),
+            subtitle: const Text(
+              'Seulement pour tester séparément l’OCR et le GPS.',
+            ),
+            value: ignoreVisualPlateFilter,
+            onChanged: onIgnoreVisualPlateFilterChanged,
+          ),
+          const SizedBox(height: 8),
           TextField(
             controller: simulatedTextController,
             minLines: 2,

@@ -1,40 +1,60 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:image/image.dart' as img;
 
-/// Extrait la zone centrale dessinée dans l'aperçu du scanner.
+/// Prépare une image de caméra pour l'OCR sans imposer la position du cadre.
 ///
-/// Le but est d'éviter qu'une enseigne ou une affiche située ailleurs dans la
-/// photo soit envoyée à l'OCR. Le recadrage est volontairement un peu plus
-/// large que le cadre visible pour tolérer les différences de ratio caméra.
+/// Le cadre affiché à l'écran est uniquement un guide. La plaque peut être
+/// décalée, inclinée, carrée ou allongée : presque toute la photo est analysée.
+/// On retire seulement une marge minime et on réduit les très grandes images
+/// afin de garder un scan suffisamment rapide sur téléphone.
 class ScanFrameService {
   const ScanFrameService();
 
   Future<String> cropToScanArea(String imagePath) async {
     final bytes = await File(imagePath).readAsBytes();
     var image = img.decodeImage(bytes);
-    if (image == null) return imagePath;
+    if (image == null) {
+      return imagePath;
+    }
+
     image = img.bakeOrientation(image);
 
-    final cropWidth = (image.width * 0.92).round();
-    final cropHeight = (image.height * 0.42).round();
-    final cropX = ((image.width - cropWidth) / 2).round();
-    final cropY = ((image.height - cropHeight) / 2).round();
-    var cropped = img.copyCrop(
-      image,
-      x: cropX,
-      y: cropY,
-      width: cropWidth,
-      height: cropHeight,
-    );
-    if (cropped.width > 1800) {
-      cropped = img.copyResize(cropped, width: 1800);
+    final horizontalMargin =
+        math.max(0, (image.width * 0.015).round()).toInt();
+    final verticalMargin =
+        math.max(0, (image.height * 0.015).round()).toInt();
+    final cropWidth = image.width - horizontalMargin * 2;
+    final cropHeight = image.height - verticalMargin * 2;
+
+    if (cropWidth > 20 && cropHeight > 20) {
+      image = img.copyCrop(
+        image,
+        x: horizontalMargin,
+        y: verticalMargin,
+        width: cropWidth,
+        height: cropHeight,
+      );
+    }
+
+    const maximumDimension = 1800;
+    final longestSide = math.max(image.width, image.height).toInt();
+    if (longestSide > maximumDimension) {
+      if (image.width >= image.height) {
+        image = img.copyResize(image, width: maximumDimension);
+      } else {
+        image = img.copyResize(image, height: maximumDimension);
+      }
     }
 
     final output = File(
       '${Directory.systemTemp.path}/ruedex_scan_${DateTime.now().microsecondsSinceEpoch}.jpg',
     );
-    await output.writeAsBytes(img.encodeJpg(cropped, quality: 92), flush: true);
+    await output.writeAsBytes(
+      img.encodeJpg(image, quality: 92),
+      flush: true,
+    );
     return output.path;
   }
 }
