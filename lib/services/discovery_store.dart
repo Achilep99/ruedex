@@ -18,9 +18,7 @@ class DiscoveryStore {
   Future<bool> addDiscovery(String streetId) async {
     final ids = await loadDiscoveredIds();
     final isNew = ids.add(streetId);
-    if (!isNew) {
-      return false;
-    }
+    if (!isNew) return false;
     final sortedIds = ids.toList()..sort();
     await _preferences.setStringList(_key, sortedIds);
     await _preferences.setString('$_datePrefix$streetId', DateTime.now().toIso8601String());

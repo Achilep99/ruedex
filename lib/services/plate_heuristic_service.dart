@@ -206,9 +206,7 @@ class PlateHeuristicService {
       for (var column = 0; column < gridX; column++) {
         // On échantillonne surtout les marges, en évitant la zone centrale où
         // se trouvent les lettres sombres.
-        if (row >= 2 && row <= 4 && column >= 2 && column <= 9) {
-          continue;
-        }
+        if (row >= 2 && row <= 4 && column >= 2 && column <= 9) continue;
         final x = rect.left + rect.width * (column + 0.5) / gridX;
         final y = rect.top + rect.height * (row + 0.5) / gridY;
         colors.add(_rgb(image, x.round(), y.round()));
@@ -223,9 +221,7 @@ class PlateHeuristicService {
   }
 
   double _colorUniformity(List<_Rgb> colors) {
-    if (colors.isEmpty) {
-      return 0;
-    }
+    if (colors.isEmpty) return 0;
     final meanR = colors.fold<double>(0, (sum, color) => sum + color.r) /
         colors.length;
     final meanG = colors.fold<double>(0, (sum, color) => sum + color.g) /

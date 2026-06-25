@@ -28,9 +28,7 @@ class StreetMatcher {
     int maximumResults = 5,
   }) {
     final fragments = TextNormalizer.fragments(recognizedText);
-    if (fragments.isEmpty) {
-      return const [];
-    }
+    if (fragments.isEmpty) return const [];
 
     final userPoint = latitude == null || longitude == null
         ? null
@@ -42,19 +40,13 @@ class StreetMatcher {
     for (final street in streets) {
       double? distance;
       if (userPoint != null) {
-        if (!street.bounds.containsRoughly(userPoint, searchRadius)) {
-          continue;
-        }
+        if (!street.bounds.containsRoughly(userPoint, searchRadius)) continue;
         distance = GeometryService.distanceToStreetMeters(userPoint, street);
-        if (!distance.isFinite || distance > searchRadius) {
-          continue;
-        }
+        if (!distance.isFinite || distance > searchRadius) continue;
       }
 
       final score = _bestTextScore(fragments, street);
-      if (score.textScore < 0.20) {
-        continue;
-      }
+      if (score.textScore < 0.20) continue;
 
       final locationScore = distance == null
           ? 0.5
@@ -160,9 +152,7 @@ class StreetMatcher {
     for (final fragment in fragments) {
       for (final possibleName in street.allNames) {
         final score = _scoreFragment(fragment, possibleName, street.roadType);
-        if (score.textScore > best.textScore) {
-          best = score;
-        }
+        if (score.textScore > best.textScore) best = score;
       }
     }
     return best;
@@ -216,9 +206,7 @@ class StreetMatcher {
     if (candidateTokens.length >= 2 && weakestMatch < 0.58) {
       textScore *= 0.55;
     }
-    if (!roadTypeCompatible) {
-      textScore *= 0.72;
-    }
+    if (!roadTypeCompatible) textScore *= 0.72;
 
     return _TextScore(
       textScore: textScore.clamp(0.0, 1.0).toDouble(),
@@ -243,22 +231,14 @@ class StreetMatcher {
   }
 
   double _tokenSimilarity(String first, String second) {
-    if (first == second) {
-      return 1.0;
-    }
-    if (first.length <= 3 || second.length <= 3) {
-      return 0.0;
-    }
+    if (first == second) return 1.0;
+    if (first.length <= 3 || second.length <= 3) return 0.0;
     return _stringSimilarity(first, second);
   }
 
   double _stringSimilarity(String first, String second) {
-    if (first.isEmpty || second.isEmpty) {
-      return 0;
-    }
-    if (first == second) {
-      return 1;
-    }
+    if (first.isEmpty || second.isEmpty) return 0;
+    if (first == second) return 1;
     final longest = math.max(first.length, second.length);
     return (1 - _levenshtein(first, second) / longest).clamp(0.0, 1.0).toDouble();
   }

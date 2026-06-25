@@ -7,16 +7,12 @@ class AppSettingsStore {
   final SharedPreferencesAsync _preferences = SharedPreferencesAsync();
 
   Future<bool> loadDeveloperMode() async {
-    if (!AppConfig.developerToolsAvailable) {
-      return false;
-    }
+    if (!AppConfig.developerToolsAvailable) return false;
     return await _preferences.getBool(_developerModeKey) ?? true;
   }
 
   Future<void> setDeveloperMode(bool enabled) async {
-    if (!AppConfig.developerToolsAvailable) {
-      return;
-    }
+    if (!AppConfig.developerToolsAvailable) return;
     await _preferences.setBool(_developerModeKey, enabled);
   }
 }

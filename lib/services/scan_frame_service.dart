@@ -13,9 +13,7 @@ class ScanFrameService {
   Future<String> cropToScanArea(String imagePath) async {
     final bytes = await File(imagePath).readAsBytes();
     var image = img.decodeImage(bytes);
-    if (image == null) {
-      return imagePath;
-    }
+    if (image == null) return imagePath;
     image = img.bakeOrientation(image);
 
     final cropWidth = (image.width * 0.92).round();

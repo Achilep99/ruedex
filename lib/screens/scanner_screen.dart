@@ -82,9 +82,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       _cameraPaused = true;
     } else if (state == AppLifecycleState.resumed) {
       _cameraPaused = false;
-      if (!_completed && !_timedOut) {
-        _scanLoop();
-      }
+      if (!_completed && !_timedOut) _scanLoop();
     }
   }
 
@@ -98,9 +96,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     await _initializeLocation();
     await _initializeCamera();
 
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
       _initializing = false;
       _status = _currentPoint == null
@@ -114,9 +110,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   Future<void> _initializeLocation() async {
     try {
       final position = await _locationService.determinePosition();
-      if (!mounted) {
-        return;
-      }
+      if (!mounted) return;
       setState(() => _realPosition = position);
       _positionSubscription = _locationService.positionStream().listen(
         (position) {
@@ -127,18 +121,14 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         onError: (_) {},
       );
     } catch (error) {
-      if (mounted) setState(() {
-        => _error = error.toString());
-      }
+      if (mounted) setState(() => _error = error.toString());
     }
   }
 
   Future<void> _initializeCamera() async {
     try {
       final cameras = await availableCameras();
-      if (cameras.isEmpty) {
-        throw StateError('Aucune caméra disponible.');
-      }
+      if (cameras.isEmpty) throw StateError('Aucune caméra disponible.');
       final backCamera = cameras.firstWhere(
         (camera) => camera.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
@@ -155,16 +145,12 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       }
       setState(() => _cameraController = controller);
     } catch (error) {
-      if (mounted) setState(() {
-        => _error = 'Caméra impossible : $error');
-      }
+      if (mounted) setState(() => _error = 'Caméra impossible : $error');
     }
   }
 
   GeoPoint? get _currentPoint {
-    if (widget.developerMode && _manualPoint != null) {
-      return _manualPoint;
-    }
+    if (widget.developerMode && _manualPoint != null) return _manualPoint;
     final position = _realPosition;
     return position == null ? null : GeoPoint(position.latitude, position.longitude);
   }
@@ -173,20 +159,14 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       widget.developerMode && _manualPoint != null ? 5 : _realPosition?.accuracy;
 
   Future<void> _scanLoop() async {
-    if (_processingFrame || _completed || _timedOut || _cameraPaused) {
-      return;
-    }
+    if (_processingFrame || _completed || _timedOut || _cameraPaused) return;
     final controller = _cameraController;
-    if (controller == null || !controller.value.isInitialized) {
-      return;
-    }
+    if (controller == null || !controller.value.isInitialized) return;
 
     _processingFrame = true;
     try {
       await Future<void>.delayed(const Duration(milliseconds: 850));
-      if (!mounted || _completed || _timedOut || _cameraPaused) {
-        return;
-      }
+      if (!mounted || _completed || _timedOut || _cameraPaused) return;
       final image = await controller.takePicture();
       _attemptCount++;
       try {
@@ -208,9 +188,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         }
       }
     } catch (error) {
-      if (mounted) setState(() {
-        => _error = 'Analyse caméra impossible : $error');
-      }
+      if (mounted) setState(() => _error = 'Analyse caméra impossible : $error');
     } finally {
       _processingFrame = false;
       if (mounted && !_completed && !_timedOut && !_cameraPaused) {
@@ -252,9 +230,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       requireGps: true,
     );
 
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
       _lastOcr = ocr;
       _lastPlateCheck = plateCheck;
@@ -289,14 +265,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   }
 
   Future<void> _completeDiscovery(MatchCandidate candidate) async {
-    if (_completed) {
-      return;
-    }
+    if (_completed) return;
     _completed = true;
     final isNew = await widget.discoveryStore.addDiscovery(candidate.street.id);
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
       _status = isNew ? 'Rue capturée !' : 'Rue déjà présente dans ton RueDex.';
     });
@@ -349,9 +321,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       imageQuality: 95,
       maxWidth: 2600,
     );
-    if (image == null) {
-      return;
-    }
+    if (image == null) return;
     setState(() {
       _timedOut = true;
       _status = 'Analyse de l’image de test…';
@@ -359,9 +329,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     try {
       await _analyzeImage(image.path, requireStableFrames: false);
     } catch (error) {
-      if (mounted) setState(() {
-        => _error = 'Image de test impossible : $error');
-      }
+      if (mounted) setState(() => _error = 'Image de test impossible : $error');
     }
   }
 
@@ -374,9 +342,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         ),
       ),
     );
-    if (point == null || !mounted) {
-      return;
-    }
+    if (point == null || !mounted) return;
     setState(() {
       _manualPoint = point;
       _status = 'GPS de test placé sur la carte.';
@@ -387,13 +353,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     setState(() => _manualPoint = null);
     try {
       final position = await _locationService.determinePosition();
-      if (mounted) setState(() {
-        => _realPosition = position);
-      }
+      if (mounted) setState(() => _realPosition = position);
     } catch (error) {
-      if (mounted) setState(() {
-        => _error = error.toString());
-      }
+      if (mounted) setState(() => _error = error.toString());
     }
   }
 
@@ -412,9 +374,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       gpsAccuracyMeters: _currentAccuracy,
       requireGps: true,
     );
-    if (!mounted) {
-      return;
-    }
+    if (!mounted) return;
     setState(() {
       _timedOut = true;
       _lastOcr = OcrScanResult(fullText: text, lines: const []);
@@ -432,9 +392,7 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
 
   Future<void> _forceSelected() async {
     final candidate = _selectedCandidate;
-    if (candidate != null) {
-      await _completeDiscovery(candidate);
-    }
+    if (candidate != null) await _completeDiscovery(candidate);
   }
 
   @override

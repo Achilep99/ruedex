@@ -9,14 +9,10 @@ class GeometryService {
   static double distanceToStreetMeters(GeoPoint point, StreetEntry street) {
     var best = double.infinity;
     for (final segment in street.segments) {
-      if (segment.length < 2) {
-        continue;
-      }
+      if (segment.length < 2) continue;
       for (var index = 0; index < segment.length - 1; index++) {
         final distance = distanceToSegmentMeters(point, segment[index], segment[index + 1]);
-        if (distance < best) {
-          best = distance;
-        }
+        if (distance < best) best = distance;
       }
     }
     return best;
@@ -32,9 +28,7 @@ class GeometryService {
     final sx = (end.longitude - start.longitude) * metersPerLongitude;
     final sy = (end.latitude - start.latitude) * metersPerLatitude;
     final lengthSquared = sx * sx + sy * sy;
-    if (lengthSquared == 0) {
-      return math.sqrt(px * px + py * py);
-    }
+    if (lengthSquared == 0) return math.sqrt(px * px + py * py);
 
     final projection = ((px * sx + py * sy) / lengthSquared).clamp(0.0, 1.0).toDouble();
     final dx = px - projection * sx;
