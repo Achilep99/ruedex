@@ -1,0 +1,7 @@
+RueDex MVP 0.1
+- Source Flutter Android preparee
+- OCR ML Kit
+- GPS reel/simule
+- Matching flou
+- Pokedex local
+- Mode developpeur

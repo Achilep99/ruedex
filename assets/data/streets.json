@@ -1,0 +1,90 @@
+[
+  {
+    "id": "paris_avenue_victor_hugo",
+    "officialName": "Avenue Victor-Hugo",
+    "aliases": ["Avenue Victor Hugo", "Victor Hugo", "Rue Victor Hugo"],
+    "city": "Paris",
+    "latitude": 48.8706,
+    "longitude": 2.2854,
+    "subjectName": "Victor Hugo",
+    "summary": "Victor Hugo (1802–1885) est un écrivain, poète et homme politique français, notamment connu pour Les Misérables et Notre-Dame de Paris.",
+    "rarity": "commune"
+  },
+  {
+    "id": "paris_boulevard_pasteur",
+    "officialName": "Boulevard Pasteur",
+    "aliases": ["Boulevard Louis Pasteur", "Bd Pasteur", "Pasteur"],
+    "city": "Paris",
+    "latitude": 48.8427,
+    "longitude": 2.3147,
+    "subjectName": "Louis Pasteur",
+    "summary": "Louis Pasteur (1822–1895) est un scientifique français dont les travaux ont transformé la microbiologie, la vaccination et la compréhension des maladies infectieuses.",
+    "rarity": "commune"
+  },
+  {
+    "id": "paris_avenue_jean_moulin",
+    "officialName": "Avenue Jean-Moulin",
+    "aliases": ["Avenue Jean Moulin", "Jean Moulin", "Av Jean Moulin"],
+    "city": "Paris",
+    "latitude": 48.8254,
+    "longitude": 2.3237,
+    "subjectName": "Jean Moulin",
+    "summary": "Jean Moulin (1899–1943) est une figure majeure de la Résistance française, chargé par Charles de Gaulle d’unifier les principaux mouvements résistants.",
+    "rarity": "rare"
+  },
+  {
+    "id": "paris_rue_marie_stuart",
+    "officialName": "Rue Marie-Stuart",
+    "aliases": ["Rue Marie Stuart", "Marie Stuart"],
+    "city": "Paris",
+    "latitude": 48.8654,
+    "longitude": 2.3478,
+    "subjectName": "Marie Stuart",
+    "summary": "Marie Stuart (1542–1587) fut reine d’Écosse et, brièvement, reine de France. Sa vie est marquée par les conflits dynastiques et religieux du XVIe siècle.",
+    "rarity": "epique"
+  },
+  {
+    "id": "paris_rue_rene_boulanger",
+    "officialName": "Rue René-Boulanger",
+    "aliases": ["Rue Rene Boulanger", "René Boulanger", "Rene Boulanger"],
+    "city": "Paris",
+    "latitude": 48.8690,
+    "longitude": 2.3601,
+    "subjectName": "René Boulanger",
+    "summary": "Cette voie porte le nom d’un propriétaire local du XIXe siècle. Cet exemple rappelle que toutes les rues ne commémorent pas une personnalité célèbre.",
+    "rarity": "peuCommune"
+  },
+  {
+    "id": "paris_rue_darwin",
+    "officialName": "Rue Darwin",
+    "aliases": ["Charles Darwin", "Darwin"],
+    "city": "Paris",
+    "latitude": 48.8371,
+    "longitude": 2.4053,
+    "subjectName": "Charles Darwin",
+    "summary": "Charles Darwin (1809–1882) est un naturaliste britannique associé à la théorie de l’évolution des espèces par sélection naturelle.",
+    "rarity": "rare"
+  },
+  {
+    "id": "paris_rue_ada_lovelace",
+    "officialName": "Rue Ada-Lovelace",
+    "aliases": ["Rue Ada Lovelace", "Ada Lovelace"],
+    "city": "Paris",
+    "latitude": 48.8992,
+    "longitude": 2.3748,
+    "subjectName": "Ada Lovelace",
+    "summary": "Ada Lovelace (1815–1852) est une mathématicienne britannique connue pour ses notes sur la machine analytique de Charles Babbage, souvent considérées comme un programme informatique précoce.",
+    "rarity": "legendaire"
+  },
+  {
+    "id": "paris_rue_georges_melies",
+    "officialName": "Rue Georges-Méliès",
+    "aliases": ["Rue Georges Melies", "Georges Méliès", "Georges Melies"],
+    "city": "Paris",
+    "latitude": 48.8338,
+    "longitude": 2.3866,
+    "subjectName": "Georges Méliès",
+    "summary": "Georges Méliès (1861–1938) est un réalisateur et illusionniste français, pionnier des trucages et du cinéma fantastique.",
+    "rarity": "epique"
+  }
+]

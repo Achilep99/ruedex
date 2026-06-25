@@ -1,0 +1,26 @@
+name: ruedex_mvp
+description: Prototype de jeu mobile de collection de plaques de rue.
+publish_to: "none"
+version: 0.1.0+1
+
+environment:
+  sdk: ">=3.5.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  google_mlkit_text_recognition: ^0.15.1
+  geolocator: ^14.0.3
+  image_picker: ^1.2.2
+  shared_preferences: ^2.5.5
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/data/streets.json
