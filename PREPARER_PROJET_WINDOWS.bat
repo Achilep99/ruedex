@@ -23,7 +23,7 @@ copy /Y pubspec.yaml "%BACKUP%\pubspec.yaml" >nul
 copy /Y analysis_options.yaml "%BACKUP%\analysis_options.yaml" >nul
 
 echo [2/4] Generation de la plateforme Android compatible avec ton Flutter...
-call flutter create --platforms=android --org fr.achile .
+call flutter create --platforms=android --org com.ruedex .
 if errorlevel 1 goto :error
 
 echo [3/4] Restauration du code et configuration Android...

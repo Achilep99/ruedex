@@ -12,6 +12,7 @@ class TextNormalizer {
   };
 
   static const Map<String, String> _streetTypeAliases = {
+    'R': 'RUE',
     'AV': 'AVENUE',
     'AVE': 'AVENUE',
     'AVEN': 'AVENUE',
@@ -22,33 +23,67 @@ class TextNormalizer {
     'PLCE': 'PLACE',
     'IMP': 'IMPASSE',
     'ALL': 'ALLEE',
-    'ALLÉE': 'ALLEE',
     'CHE': 'CHEMIN',
     'CH': 'CHEMIN',
+    'RTE': 'ROUTE',
+    'SQ': 'SQUARE',
+  };
+
+  static const Set<String> streetTypeWords = {
+    'RUE',
+    'AVENUE',
+    'BOULEVARD',
+    'PLACE',
+    'IMPASSE',
+    'CHEMIN',
+    'ROUTE',
+    'QUAI',
+    'ALLEE',
+    'PASSAGE',
+    'SQUARE',
+    'CITE',
+    'VILLA',
+    'COUR',
+    'ROND POINT',
+    'PROMENADE',
+    'SENTIER',
+    'TERRASSE',
+    'PORT',
+    'PONT',
+  };
+
+  static const Set<String> connectorWords = {
+    'DE', 'DU', 'DES', 'LA', 'LE', 'LES', 'D', 'L', 'AU', 'AUX', 'A', 'ET',
+  };
+
+  static const Set<String> _noiseWords = {
+    'VILLE',
+    'MAIRIE',
+    'COMMUNE',
+    'ARRONDISSEMENT',
+    'PARIS',
+    'FRANCE',
   };
 
   static String normalize(String input, {bool correctOcrDigits = true}) {
     var text = input.toUpperCase();
-
     _accentMap.forEach((accented, plain) {
       text = text.replaceAll(accented, plain);
     });
-
     if (correctOcrDigits) {
       text = _correctOcrDigits(text);
     }
-
     text = text
         .replaceAll(RegExp(r"[^A-Z0-9 '\-]"), ' ')
         .replaceAll(RegExp(r"[-']"), ' ')
         .replaceAll(RegExp(r'\s+'), ' ')
         .trim();
 
-    final tokens = text.split(' ').where((token) => token.isNotEmpty).map(
-      (token) => _streetTypeAliases[token] ?? token,
-    );
-
-    return tokens.join(' ');
+    return text
+        .split(' ')
+        .where((token) => token.isNotEmpty)
+        .map((token) => _streetTypeAliases[token] ?? token)
+        .join(' ');
   }
 
   static String _correctOcrDigits(String input) {
@@ -63,46 +98,58 @@ class TextNormalizer {
       final character = characters[index];
       final touchesLetter = isLetterAt(index - 1) || isLetterAt(index + 1);
       if (!touchesLetter) continue;
-
       if (character == '0') characters[index] = 'O';
       if (character == '1') characters[index] = 'I';
+      if (character == '5') characters[index] = 'S';
+      if (character == '8') characters[index] = 'B';
     }
-
     return characters.join();
   }
 
-  static String withoutNoiseWords(String input) {
-    const noiseWords = {
-      'VILLE',
-      'MAIRIE',
-      'COMMUNE',
-      'ARRONDISSEMENT',
-      'PARIS',
-      'LYON',
-      'MARSEILLE',
-      'METROPOLE',
-    };
-
-    return normalize(input)
-        .split(' ')
-        .where((token) => !noiseWords.contains(token))
-        .join(' ');
+  static Set<String> roadTypes(String input) {
+    final normalized = normalize(input);
+    final types = <String>{};
+    for (final type in streetTypeWords) {
+      if (normalized == type || normalized.contains('$type ')) {
+        types.add(type);
+      }
+    }
+    return types;
   }
 
+  static List<String> significantTokens(String input) {
+    return normalize(input)
+        .split(' ')
+        .where(
+          (token) =>
+              token.length >= 2 &&
+              !streetTypeWords.contains(token) &&
+              !connectorWords.contains(token) &&
+              !_noiseWords.contains(token),
+        )
+        .toList(growable: false);
+  }
+
+  static String significantName(String input) => significantTokens(input).join(' ');
+
   static List<String> fragments(String rawText) {
-    final lines = rawText
+    final normalizedLines = rawText
         .split(RegExp(r'[\r\n]+'))
-        .map(withoutNoiseWords)
+        .map(normalize)
         .where((line) => line.length >= 3)
         .toList(growable: false);
 
-    final fragments = <String>{withoutNoiseWords(rawText)};
-    fragments.addAll(lines);
+    final fragments = <String>{};
+    fragments.addAll(normalizedLines);
+    final whole = normalize(rawText);
+    if (whole.isNotEmpty) fragments.add(whole);
 
-    for (var index = 0; index < lines.length - 1; index++) {
-      fragments.add('${lines[index]} ${lines[index + 1]}'.trim());
+    for (var index = 0; index < normalizedLines.length - 1; index++) {
+      fragments.add('${normalizedLines[index]} ${normalizedLines[index + 1]}');
     }
 
-    return fragments.where((fragment) => fragment.isNotEmpty).toList();
+    return fragments
+        .where((fragment) => significantTokens(fragment).isNotEmpty)
+        .toList(growable: false);
   }
 }

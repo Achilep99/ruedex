@@ -1,21 +1,15 @@
-# Compiler RueDex sans ordinateur
+# Obtenir les APK avec GitHub Actions
 
-Cette méthode utilise GitHub Actions : le serveur GitHub installe Flutter, construit l'application, puis fournit l'APK à télécharger.
+Le serveur GitHub télécharge la base complète de Paris, installe Flutter, teste RueDex puis compile deux APK.
 
-## Depuis un téléphone Android
+1. Place le contenu du projet dans ton dépôt GitHub.
+2. Vérifie que `.github/workflows/build-apk.yml` est bien présent.
+3. Ouvre **Actions** puis **Construire APK RueDex V2**.
+4. Utilise **Run workflow** si aucune exécution ne démarre automatiquement.
+5. Une fois toutes les étapes vertes, ouvre l'exécution.
+6. Dans **Artifacts**, télécharge **RueDex-V2-APK**.
+7. Décompresse le ZIP :
+   - `RueDex-developpeur.apk` pour les tests ;
+   - `RueDex-utilisateur.apk` pour vérifier la vraie expérience joueur.
 
-1. Crée un compte sur GitHub si nécessaire.
-2. Crée un nouveau dépôt vide nommé `ruedex`.
-3. Décompresse `ruedex_mvp.zip` sur le téléphone.
-4. Depuis le site GitHub en mode navigateur, ajoute le contenu décompressé au dépôt. Le fichier caché `.github/workflows/build-apk.yml` doit impérativement être inclus.
-5. Ouvre l'onglet **Actions** du dépôt.
-6. Ouvre **Construire APK RueDex**.
-7. Appuie sur **Run workflow**, puis confirme.
-8. Quand le build est terminé, ouvre son résultat et télécharge l'artefact **RueDex-APK**.
-9. Décompresse l'artefact et installe `app-debug.apk`.
-
-Android peut demander l'autorisation « Installer des applications inconnues » pour ton navigateur ou ton gestionnaire de fichiers.
-
-## Important
-
-L'APK généré est une version de test (`debug`). Elle est suffisante pour installer et essayer RueDex sur ton téléphone. Une future publication sur le Play Store demandera une version `release` signée.
+Les APK sont des builds `debug`, installables directement pour les essais. La publication Play Store demandera ensuite un build `release` signé.

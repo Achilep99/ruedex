@@ -19,5 +19,5 @@ echo Appareils disponibles :
 call flutter devices
 echo.
 echo Lancement de RueDex...
-call flutter run
+call flutter run --dart-define=RUEDEX_DEV_TOOLS=true
 pause

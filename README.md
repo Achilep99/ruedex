@@ -1,133 +1,63 @@
-# RueDex — MVP Android
+# RueDex V2 — Paris
 
-Prototype jouable pour photographier une plaque de rue, lire son texte avec OCR, utiliser le GPS comme filtre et ajouter la rue à une collection locale.
+Prototype Android d'un jeu de piste : le joueur ouvre le scanner, cadre une plaque de rue et l'application combine automatiquement la caméra, l'OCR et le GPS pour tenter de débloquer une voie de Paris.
 
-## Ce qui fonctionne déjà
+## Ce que contient cette version
 
-- Photo avec la caméra ou import depuis la galerie.
-- OCR latin avec Google ML Kit.
-- Vrai GPS ou coordonnées simulées.
-- Correction d'erreurs OCR courantes, par exemple `VICT0R HUG0`.
-- Classement des rues candidates par score texte + distance.
-- Validation automatique au-dessus d'un seuil.
-- Validation forcée dans le mode développeur.
-- RueDex local avec fiches, raretés et remise à zéro.
-- Tests automatisés de normalisation et de correspondance.
+- scan automatique sans bouton photo ;
+- GPS réel récupéré dès l'ouverture du scanner ;
+- comparaison OCR qui ignore les mots génériques (`rue`, `avenue`, etc.) ;
+- validation seulement si le nom significatif est suffisamment complet ;
+- distance calculée vers les tronçons de la rue, et non vers un point central ;
+- filtre visuel provisoire : forme allongée, bords probables, fond homogène, contraste et netteté ;
+- confirmation du même résultat sur deux images successives ;
+- une seule rue validée par session ;
+- carte de Paris sans aucun nom : rues inconnues gris clair, rues découvertes colorées ;
+- origine officielle du nom affichée uniquement lorsqu'elle existe dans Paris Data ;
+- mode développeur avec import d'image, texte OCR simulé, diagnostics et GPS choisi sur la carte ;
+- APK utilisateur séparé, compilé sans les outils développeur.
 
-## Installation sur Windows 10/11
+## Base complète de Paris
 
-### 1. Installer Flutter
+Le dépôt contient une petite base de secours pour permettre l'ouverture du projet. Pendant GitHub Actions, le workflow télécharge automatiquement :
 
-Installe Flutter stable et ajoute le dossier `flutter\bin` au PATH Windows.
+- la nomenclature officielle des voies de Paris ;
+- les tronçons géographiques des voies.
 
-Dans PowerShell, vérifie ensuite :
+Le script `tools/build_paris_database.py` les fusionne et génère `assets/data/paris_streets.json`. Le build échoue volontairement si moins de 3 000 voies sont produites : cela évite de générer silencieusement un APK avec une base incomplète.
 
-```powershell
-flutter --version
-flutter doctor
-```
+## Les deux APK produits
 
-### 2. Installer Android Studio
+Dans l'artefact GitHub **RueDex-V2-APK** :
 
-Dans Android Studio, installe :
+- `RueDex-developpeur.apk` : permet d'activer/désactiver les outils de test. Quand ils sont désactivés, l'écran visible est le mode joueur. Pour rouvrir les réglages, maintiens le titre **RueDex** appuyé.
+- `RueDex-utilisateur.apk` : vraie version joueur ; les outils développeur ne sont pas compilés dans l'application.
 
-- Android SDK ;
-- Android SDK Platform 35 ou plus récente ;
-- Android Emulator ;
-- Android SDK Command-line Tools.
+## Compiler avec GitHub Actions
 
-Crée ensuite un appareil virtuel Android 64 bits dans **Device Manager**, puis démarre-le.
+1. Envoie ce projet sur la branche `main` de ton dépôt GitHub.
+2. Ouvre l'onglet **Actions**.
+3. Lance ou ouvre **Construire APK RueDex V2**.
+4. Quand le workflow est vert, télécharge l'artefact **RueDex-V2-APK**.
+5. Décompresse-le puis installe l'APK souhaité.
 
-Accepte les licences si nécessaire :
+## Rareté
 
-```powershell
-flutter doctor --android-licenses
-```
+L'architecture gère les niveaux `commune`, `peuCommune`, `rare`, `epique` et `legendaire`. Quelques voies de démonstration ont un classement manuel dans `assets/data/rarity_overrides.json`.
 
-### 3. Préparer RueDex
+La majorité des voies reste volontairement **non classée** dans cette version : un classement sérieux doit être calculé à partir d'une base nationale de dénominations, pas inventé à partir de la longueur de la rue ou de la célébrité supposée de la personne. Le futur pipeline de rareté pourra remplir le même champ sans modifier l'application.
 
-Double-clique sur :
+## Description et homonymes
 
-```text
-PREPARER_PROJET_WINDOWS.bat
-```
+RueDex n'essaie pas de deviner une personne depuis le seul nom OCR. La description provient du champ officiel d'origine attaché à l'identifiant exact de la voie parisienne. Si ce champ est vide, aucune description n'est affichée.
 
-Le script génère automatiquement la partie Android compatible avec la version de Flutter installée, remet le code RueDex en place, ajoute les permissions GPS et télécharge les dépendances.
+## Limites connues
 
-### 4. Lancer l'application
+- Le filtre de plaque est heuristique, pas encore un modèle d'IA entraîné.
+- Une photo de plaque affichée sur un écran peut encore tromper le filtre ; le GPS et la stabilité sur plusieurs images limitent néanmoins les faux positifs.
+- Les seuils de netteté, de cadre et d'OCR devront être ajustés avec de vraies photos variées.
+- Le projet n'a pas encore de compte en ligne ni de synchronisation.
 
-Avec l'émulateur ouvert, double-clique sur :
+## Données et licence
 
-```text
-LANCER_APPLICATION.bat
-```
-
-## Premier test sans aucune photo
-
-1. Ouvre **Scanner une plaque**.
-2. Laisse le mode **Dev** activé.
-3. Le texte simulé contient déjà `RUE VICT0R HUG0`.
-4. Les coordonnées correspondent à l'entrée de démonstration Victor Hugo.
-5. Appuie sur **Tester la reconnaissance**.
-6. Sélectionne le premier candidat et valide la découverte.
-7. Reviens dans le RueDex.
-
-## Test avec une vraie photo
-
-Dans l'émulateur, utilise **Galerie** pour importer une photo de plaque depuis le stockage virtuel. Sur un téléphone Android branché en USB, les boutons **Caméra** et **Vrai GPS** permettent un test réel.
-
-Pour lancer sur un téléphone :
-
-1. Active les options développeur et le débogage USB.
-2. Branche le téléphone.
-3. Vérifie qu'il apparaît avec `flutter devices`.
-4. Lance `LANCER_APPLICATION.bat`.
-
-## Modifier la base de rues
-
-Le fichier est ici :
-
-```text
-assets/data/streets.json
-```
-
-Chaque entrée contient :
-
-```json
-{
-  "id": "identifiant_unique",
-  "officialName": "Avenue Victor-Hugo",
-  "aliases": ["Avenue Victor Hugo", "Victor Hugo"],
-  "city": "Paris",
-  "latitude": 48.8706,
-  "longitude": 2.2854,
-  "subjectName": "Victor Hugo",
-  "summary": "Courte biographie vérifiée.",
-  "rarity": "commune"
-}
-```
-
-Raretés possibles : `commune`, `peuCommune`, `rare`, `epique`, `legendaire`.
-
-Les coordonnées incluses servent uniquement à la démonstration technique. Pour une version publique, il faudra représenter les rues par plusieurs points ou segments plutôt que par un seul point central.
-
-## Lancer les tests
-
-Double-clique sur :
-
-```text
-TESTER_CODE.bat
-```
-
-## Limites volontaires de ce MVP
-
-- Android uniquement pour l'instant.
-- Analyse après capture, pas encore OCR vidéo en temps réel.
-- Petite base JSON locale de démonstration.
-- Une seule coordonnée par rue.
-- Les fiches historiques doivent être vérifiées avant publication.
-- Pas encore de compte, serveur, carte, classement ou synchronisation cloud.
-
-## Prochaine évolution logique
-
-La prochaine étape est de tester le moteur avec un dossier de vraies photos de plaques. On pourra ensuite ajuster les seuils, ajouter le recadrage automatique de la plaque et remplacer la base de démonstration par les rues d'une ville pilote.
+Données géographiques et historiques : Ville de Paris — Paris Data — ODbL. Le code de l'application reste séparé de la base dérivée.

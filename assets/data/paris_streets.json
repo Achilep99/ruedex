@@ -1,0 +1,268 @@
+{
+  "metadata": {
+    "sourceLabel": "Jeu de secours — le workflow GitHub le remplace par Paris Data — ODbL",
+    "generatedAt": "",
+    "streetCount": 8,
+    "bounds": {
+      "minLatitude": 48.8184,
+      "maxLatitude": 48.9056,
+      "minLongitude": 2.2784,
+      "maxLongitude": 2.4127
+    }
+  },
+  "streets": [
+    {
+      "id": "paris_avenue_victor_hugo",
+      "officialName": "Avenue Victor-Hugo",
+      "roadType": "AVENUE",
+      "normalizedName": "VICTOR HUGO",
+      "aliases": [
+        "Avenue Victor Hugo",
+        "Victor Hugo",
+        "Rue Victor Hugo"
+      ],
+      "city": "Paris",
+      "arrondissement": "",
+      "origin": "",
+      "rarity": "commune",
+      "raritySource": "prototype",
+      "segments": [
+        [
+          [
+            48.8692,
+            2.2834
+          ],
+          [
+            48.8706,
+            2.2854
+          ],
+          [
+            48.872,
+            2.2874
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "paris_boulevard_pasteur",
+      "officialName": "Boulevard Pasteur",
+      "roadType": "BOULEVARD",
+      "normalizedName": "PASTEUR",
+      "aliases": [
+        "Boulevard Louis Pasteur",
+        "Bd Pasteur",
+        "Pasteur"
+      ],
+      "city": "Paris",
+      "arrondissement": "",
+      "origin": "",
+      "rarity": "commune",
+      "raritySource": "prototype",
+      "segments": [
+        [
+          [
+            48.841,
+            2.3123
+          ],
+          [
+            48.8427,
+            2.3147
+          ],
+          [
+            48.8444,
+            2.3171
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "paris_avenue_jean_moulin",
+      "officialName": "Avenue Jean-Moulin",
+      "roadType": "AVENUE",
+      "normalizedName": "JEAN MOULIN",
+      "aliases": [
+        "Avenue Jean Moulin",
+        "Jean Moulin",
+        "Av Jean Moulin"
+      ],
+      "city": "Paris",
+      "arrondissement": "",
+      "origin": "",
+      "rarity": "rare",
+      "raritySource": "prototype",
+      "segments": [
+        [
+          [
+            48.8234,
+            2.3217
+          ],
+          [
+            48.8254,
+            2.3237
+          ],
+          [
+            48.8274,
+            2.3257
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "paris_rue_marie_stuart",
+      "officialName": "Rue Marie-Stuart",
+      "roadType": "RUE",
+      "normalizedName": "MARIE STUART",
+      "aliases": [
+        "Rue Marie Stuart",
+        "Marie Stuart"
+      ],
+      "city": "Paris",
+      "arrondissement": "",
+      "origin": "",
+      "rarity": "epique",
+      "raritySource": "prototype",
+      "segments": [
+        [
+          [
+            48.864,
+            2.3454
+          ],
+          [
+            48.8654,
+            2.3478
+          ],
+          [
+            48.8668,
+            2.3502
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "paris_rue_rene_boulanger",
+      "officialName": "Rue René-Boulanger",
+      "roadType": "RUE",
+      "normalizedName": "RENÉ BOULANGER",
+      "aliases": [
+        "Rue Rene Boulanger",
+        "René Boulanger",
+        "Rene Boulanger"
+      ],
+      "city": "Paris",
+      "arrondissement": "",
+      "origin": "",
+      "rarity": "peuCommune",
+      "raritySource": "prototype",
+      "segments": [
+        [
+          [
+            48.8673,
+            2.3581
+          ],
+          [
+            48.869,
+            2.3601
+          ],
+          [
+            48.8707,
+            2.3621
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "paris_rue_darwin",
+      "officialName": "Rue Darwin",
+      "roadType": "RUE",
+      "normalizedName": "DARWIN",
+      "aliases": [
+        "Charles Darwin",
+        "Darwin"
+      ],
+      "city": "Paris",
+      "arrondissement": "",
+      "origin": "",
+      "rarity": "rare",
+      "raritySource": "prototype",
+      "segments": [
+        [
+          [
+            48.8351,
+            2.4029
+          ],
+          [
+            48.8371,
+            2.4053
+          ],
+          [
+            48.8391,
+            2.4077
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "paris_rue_ada_lovelace",
+      "officialName": "Rue Ada-Lovelace",
+      "roadType": "RUE",
+      "normalizedName": "ADA LOVELACE",
+      "aliases": [
+        "Rue Ada Lovelace",
+        "Ada Lovelace"
+      ],
+      "city": "Paris",
+      "arrondissement": "",
+      "origin": "",
+      "rarity": "legendaire",
+      "raritySource": "prototype",
+      "segments": [
+        [
+          [
+            48.8978,
+            2.3728
+          ],
+          [
+            48.8992,
+            2.3748
+          ],
+          [
+            48.9006,
+            2.3768
+          ]
+        ]
+      ]
+    },
+    {
+      "id": "paris_rue_georges_melies",
+      "officialName": "Rue Georges-Méliès",
+      "roadType": "RUE",
+      "normalizedName": "GEORGES MÉLIÈS",
+      "aliases": [
+        "Rue Georges Melies",
+        "Georges Méliès",
+        "Georges Melies"
+      ],
+      "city": "Paris",
+      "arrondissement": "",
+      "origin": "",
+      "rarity": "epique",
+      "raritySource": "prototype",
+      "segments": [
+        [
+          [
+            48.8321,
+            2.3842
+          ],
+          [
+            48.8338,
+            2.3866
+          ],
+          [
+            48.8355,
+            2.389
+          ]
+        ]
+      ]
+    }
+  ]
+}

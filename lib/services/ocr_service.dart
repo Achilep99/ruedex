@@ -1,15 +1,21 @@
 import 'package:google_mlkit_text_recognition/google_mlkit_text_recognition.dart';
 
-class OcrService {
-  final TextRecognizer _recognizer = TextRecognizer(
-    script: TextRecognitionScript.latin,
-  );
+import '../models/ocr_scan_result.dart';
 
-  Future<String> recognizeImage(String imagePath) async {
+class OcrService {
+  final TextRecognizer _recognizer = TextRecognizer(script: TextRecognitionScript.latin);
+
+  Future<OcrScanResult> recognizeImage(String imagePath) async {
     final image = InputImage.fromFilePath(imagePath);
     final result = await _recognizer.processImage(image);
-    return result.text;
+    final lines = <OcrLineResult>[];
+    for (final block in result.blocks) {
+      for (final line in block.lines) {
+        lines.add(OcrLineResult(text: line.text, boundingBox: line.boundingBox));
+      }
+    }
+    return OcrScanResult(fullText: result.text, lines: lines);
   }
 
-  Future<void> dispose() => _recognizer.close();
+  void dispose() => _recognizer.close();
 }

@@ -1,185 +1,288 @@
+import 'dart:async';
 import 'dart:io';
 
+import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../models/geo_point.dart';
 import '../models/match_candidate.dart';
-import '../models/street_entry.dart';
+import '../models/ocr_scan_result.dart';
+import '../models/plate_check_result.dart';
+import '../models/street_database.dart';
 import '../services/discovery_store.dart';
 import '../services/location_service.dart';
 import '../services/ocr_service.dart';
+import '../services/plate_heuristic_service.dart';
+import '../services/scan_frame_service.dart';
 import '../services/street_matcher.dart';
 import '../widgets/rarity_badge.dart';
+import 'coordinate_picker_screen.dart';
 
 class ScannerScreen extends StatefulWidget {
   const ScannerScreen({
-    required this.streets,
+    required this.database,
     required this.discoveryStore,
+    required this.developerMode,
     super.key,
   });
 
-  final List<StreetEntry> streets;
+  final StreetDatabase database;
   final DiscoveryStore discoveryStore;
+  final bool developerMode;
 
   @override
   State<ScannerScreen> createState() => _ScannerScreenState();
 }
 
-class _ScannerScreenState extends State<ScannerScreen> {
-  final ImagePicker _imagePicker = ImagePicker();
+class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserver {
   final OcrService _ocrService = OcrService();
   final LocationService _locationService = LocationService();
+  final PlateHeuristicService _plateHeuristic = const PlateHeuristicService();
+  final ScanFrameService _scanFrameService = const ScanFrameService();
   final StreetMatcher _matcher = const StreetMatcher();
-
+  final ImagePicker _imagePicker = ImagePicker();
   final TextEditingController _simulatedTextController = TextEditingController(
-    text: 'RUE VICT0R HUG0',
-  );
-  final TextEditingController _latitudeController = TextEditingController(
-    text: '48.8706',
-  );
-  final TextEditingController _longitudeController = TextEditingController(
-    text: '2.2854',
+    text: 'RUE RENE BOULANGER',
   );
 
-  XFile? _image;
-  String _recognizedText = '';
+  CameraController? _cameraController;
+  StreamSubscription<Position>? _positionSubscription;
+  Position? _realPosition;
+  GeoPoint? _manualPoint;
+  OcrScanResult? _lastOcr;
+  PlateCheckResult? _lastPlateCheck;
   List<MatchCandidate> _candidates = const [];
+  MatchDecision? _decision;
   MatchCandidate? _selectedCandidate;
-  bool _developerMode = true;
-  bool _processing = false;
+
+  bool _initializing = true;
+  bool _processingFrame = false;
+  bool _completed = false;
+  bool _timedOut = false;
+  bool _cameraPaused = false;
+  String _status = 'Initialisation de la caméra et du GPS…';
   String? _error;
-  double? _latitude;
-  double? _longitude;
+  int _attemptCount = 0;
+  String? _stableStreetId;
+  int _stableCount = 0;
+  DateTime _scanStartedAt = DateTime.now();
 
   @override
-  void dispose() {
-    _ocrService.dispose();
-    _simulatedTextController.dispose();
-    _latitudeController.dispose();
-    _longitudeController.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _initialize();
   }
 
-  Future<void> _pickImage(ImageSource source) async {
-    final image = await _imagePicker.pickImage(
-      source: source,
-      imageQuality: 95,
-      maxWidth: 2400,
-    );
-    if (image == null) return;
-
-    setState(() {
-      _image = image;
-      _error = null;
-    });
-    await _runOcr();
-  }
-
-  Future<void> _runOcr() async {
-    final image = _image;
-    if (image == null) return;
-
-    setState(() {
-      _processing = true;
-      _error = null;
-      _candidates = const [];
-      _selectedCandidate = null;
-    });
-
-    try {
-      final text = await _ocrService.recognizeImage(image.path);
-      if (!mounted) return;
-      setState(() => _recognizedText = text);
-      await _match(text);
-    } catch (error) {
-      if (!mounted) return;
-      setState(() => _error = 'OCR impossible : $error');
-    } finally {
-      if (mounted) setState(() => _processing = false);
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      _cameraPaused = true;
+    } else if (state == AppLifecycleState.resumed) {
+      _cameraPaused = false;
+      if (!_completed && !_timedOut) _scanLoop();
     }
   }
 
-  Future<void> _useRealGps() async {
+  Future<void> _initialize() async {
     setState(() {
-      _processing = true;
+      _initializing = true;
       _error = null;
+      _status = 'Recherche de ta position…';
     });
 
+    await _initializeLocation();
+    await _initializeCamera();
+
+    if (!mounted) return;
+    setState(() {
+      _initializing = false;
+      _status = _currentPoint == null
+          ? 'GPS indisponible : impossible de valider une rue.'
+          : 'Recherche d’une plaque… reste immobile.';
+    });
+    _scanStartedAt = DateTime.now();
+    _scanLoop();
+  }
+
+  Future<void> _initializeLocation() async {
     try {
       final position = await _locationService.determinePosition();
       if (!mounted) return;
-      setState(() {
-        _latitude = position.latitude;
-        _longitude = position.longitude;
-        _latitudeController.text = position.latitude.toStringAsFixed(6);
-        _longitudeController.text = position.longitude.toStringAsFixed(6);
-      });
-      if (_recognizedText.isNotEmpty) {
-        await _match(_recognizedText);
-      }
-    } on LocationException catch (error) {
-      if (!mounted) return;
-      setState(() => _error = error.message);
+      setState(() => _realPosition = position);
+      _positionSubscription = _locationService.positionStream().listen(
+        (position) {
+          if (mounted && _manualPoint == null) setState(() => _realPosition = position);
+        },
+        onError: (_) {},
+      );
     } catch (error) {
-      if (!mounted) return;
-      setState(() => _error = 'GPS impossible : $error');
-    } finally {
-      if (mounted) setState(() => _processing = false);
+      if (mounted) setState(() => _error = error.toString());
     }
   }
 
-  Future<void> _analyzeSimulatedText() async {
-    final latitude = double.tryParse(_latitudeController.text.replaceAll(',', '.'));
-    final longitude = double.tryParse(_longitudeController.text.replaceAll(',', '.'));
-
-    setState(() {
-      _latitude = latitude;
-      _longitude = longitude;
-      _recognizedText = _simulatedTextController.text;
-      _error = null;
-    });
-
-    await _match(_recognizedText);
+  Future<void> _initializeCamera() async {
+    try {
+      final cameras = await availableCameras();
+      if (cameras.isEmpty) throw StateError('Aucune caméra disponible.');
+      final backCamera = cameras.firstWhere(
+        (camera) => camera.lensDirection == CameraLensDirection.back,
+        orElse: () => cameras.first,
+      );
+      final controller = CameraController(
+        backCamera,
+        ResolutionPreset.high,
+        enableAudio: false,
+      );
+      await controller.initialize();
+      if (!mounted) {
+        await controller.dispose();
+        return;
+      }
+      setState(() => _cameraController = controller);
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Caméra impossible : $error');
+    }
   }
 
-  Future<void> _match(String text) async {
-    final results = _matcher.findCandidates(
-      recognizedText: text,
-      streets: widget.streets,
-      latitude: _latitude,
-      longitude: _longitude,
+  GeoPoint? get _currentPoint {
+    if (widget.developerMode && _manualPoint != null) return _manualPoint;
+    final position = _realPosition;
+    return position == null ? null : GeoPoint(position.latitude, position.longitude);
+  }
+
+  double? get _currentAccuracy =>
+      widget.developerMode && _manualPoint != null ? 5 : _realPosition?.accuracy;
+
+  Future<void> _scanLoop() async {
+    if (_processingFrame || _completed || _timedOut || _cameraPaused) return;
+    final controller = _cameraController;
+    if (controller == null || !controller.value.isInitialized) return;
+
+    _processingFrame = true;
+    try {
+      await Future<void>.delayed(const Duration(milliseconds: 850));
+      if (!mounted || _completed || _timedOut || _cameraPaused) return;
+      final image = await controller.takePicture();
+      _attemptCount++;
+      try {
+        await _analyzeImage(image.path, requireStableFrames: true);
+      } finally {
+        final file = File(image.path);
+        if (await file.exists()) await file.delete();
+      }
+
+      if (!_completed &&
+          DateTime.now().difference(_scanStartedAt) > const Duration(seconds: 15)) {
+        if (mounted) {
+          setState(() {
+            _timedOut = true;
+            _status = 'Plaque non reconnue. Rapproche-toi, cadre mieux la plaque ou améliore la lumière.';
+          });
+        }
+      }
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Analyse caméra impossible : $error');
+    } finally {
+      _processingFrame = false;
+      if (mounted && !_completed && !_timedOut && !_cameraPaused) {
+        unawaited(_scanLoop());
+      }
+    }
+  }
+
+  Future<void> _analyzeImage(
+    String imagePath, {
+    required bool requireStableFrames,
+  }) async {
+    final point = _currentPoint;
+    final framedImagePath = await _scanFrameService.cropToScanArea(imagePath);
+    final framedImageIsTemporary = framedImagePath != imagePath;
+    late final OcrScanResult ocr;
+    late final PlateCheckResult plateCheck;
+    try {
+      ocr = await _ocrService.recognizeImage(framedImagePath);
+      plateCheck = await _plateHeuristic.analyze(framedImagePath, ocr);
+    } finally {
+      if (framedImageIsTemporary) {
+        final temporaryFile = File(framedImagePath);
+        if (await temporaryFile.exists()) await temporaryFile.delete();
+      }
+    }
+    final candidates = _matcher.findCandidates(
+      recognizedText: ocr.fullText,
+      streets: widget.database.streets,
+      latitude: point?.latitude,
+      longitude: point?.longitude,
+      gpsAccuracyMeters: _currentAccuracy,
+    );
+    final decision = _matcher.decide(
+      candidates,
+      gpsAccuracyMeters: _currentAccuracy,
+      requireGps: true,
     );
 
     if (!mounted) return;
     setState(() {
-      _candidates = results;
-      _selectedCandidate = results.isEmpty ? null : results.first;
+      _lastOcr = ocr;
+      _lastPlateCheck = plateCheck;
+      _candidates = candidates;
+      _decision = decision;
+      _selectedCandidate = candidates.isEmpty ? null : candidates.first;
+      _status = plateCheck.isProbablePlate
+          ? decision.reason
+          : 'Le cadre ne ressemble pas assez à une plaque de rue.';
     });
+
+    if (!plateCheck.isProbablePlate || !decision.accepted || decision.best == null) {
+      _stableStreetId = null;
+      _stableCount = 0;
+      return;
+    }
+
+    final id = decision.best!.street.id;
+    if (_stableStreetId == id) {
+      _stableCount++;
+    } else {
+      _stableStreetId = id;
+      _stableCount = 1;
+    }
+
+    final requiredCount = requireStableFrames ? 2 : 1;
+    if (_stableCount >= requiredCount) {
+      await _completeDiscovery(decision.best!);
+    } else if (mounted) {
+      setState(() => _status = 'Nom repéré. Vérification sur une seconde image…');
+    }
   }
 
-  Future<void> _validateSelection() async {
-    final selected = _selectedCandidate;
-    if (selected == null) return;
-
-    await widget.discoveryStore.addDiscovery(selected.street.id);
+  Future<void> _completeDiscovery(MatchCandidate candidate) async {
+    if (_completed) return;
+    _completed = true;
+    final isNew = await widget.discoveryStore.addDiscovery(candidate.street.id);
     if (!mounted) return;
+    setState(() {
+      _status = isNew ? 'Rue capturée !' : 'Rue déjà présente dans ton RueDex.';
+    });
 
     await showDialog<void>(
       context: context,
+      barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: const Text('Nouvelle rue découverte !'),
+        title: Text(isNew ? 'Nouvelle rue découverte !' : 'Rue déjà découverte'),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              selected.street.officialName,
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
+            Text(candidate.street.officialName, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 10),
-            RarityBadge(rarity: selected.street.rarity),
-            const SizedBox(height: 16),
-            Text(selected.street.summary),
+            RarityBadge(rarity: candidate.street.rarity),
+            if (candidate.street.hasVerifiedOrigin) ...[
+              const SizedBox(height: 16),
+              Text(candidate.street.origin),
+            ],
           ],
         ),
         actions: [
@@ -192,105 +295,220 @@ class _ScannerScreenState extends State<ScannerScreen> {
     );
   }
 
+  Future<void> _retry() async {
+    setState(() {
+      _timedOut = false;
+      _completed = false;
+      _attemptCount = 0;
+      _stableStreetId = null;
+      _stableCount = 0;
+      _status = 'Recherche d’une plaque… reste immobile.';
+      _error = null;
+    });
+    _scanStartedAt = DateTime.now();
+    _scanLoop();
+  }
+
+  Future<void> _pickDeveloperImage() async {
+    final image = await _imagePicker.pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 95,
+      maxWidth: 2600,
+    );
+    if (image == null) return;
+    setState(() {
+      _timedOut = true;
+      _status = 'Analyse de l’image de test…';
+    });
+    try {
+      await _analyzeImage(image.path, requireStableFrames: false);
+    } catch (error) {
+      if (mounted) setState(() => _error = 'Image de test impossible : $error');
+    }
+  }
+
+  Future<void> _chooseManualGps() async {
+    final point = await Navigator.of(context).push<GeoPoint>(
+      MaterialPageRoute(
+        builder: (_) => CoordinatePickerScreen(
+          database: widget.database,
+          initialPoint: _currentPoint,
+        ),
+      ),
+    );
+    if (point == null || !mounted) return;
+    setState(() {
+      _manualPoint = point;
+      _status = 'GPS de test placé sur la carte.';
+    });
+  }
+
+  Future<void> _useRealGps() async {
+    setState(() => _manualPoint = null);
+    try {
+      final position = await _locationService.determinePosition();
+      if (mounted) setState(() => _realPosition = position);
+    } catch (error) {
+      if (mounted) setState(() => _error = error.toString());
+    }
+  }
+
+  Future<void> _testSimulatedText() async {
+    final point = _currentPoint;
+    final text = _simulatedTextController.text;
+    final candidates = _matcher.findCandidates(
+      recognizedText: text,
+      streets: widget.database.streets,
+      latitude: point?.latitude,
+      longitude: point?.longitude,
+      gpsAccuracyMeters: _currentAccuracy,
+    );
+    final decision = _matcher.decide(
+      candidates,
+      gpsAccuracyMeters: _currentAccuracy,
+      requireGps: true,
+    );
+    if (!mounted) return;
+    setState(() {
+      _timedOut = true;
+      _lastOcr = OcrScanResult(fullText: text, lines: const []);
+      _lastPlateCheck = const PlateCheckResult(
+        score: 1,
+        isProbablePlate: true,
+        diagnostics: ['Filtre plaque ignoré pour le texte simulé.'],
+      );
+      _candidates = candidates;
+      _decision = decision;
+      _selectedCandidate = candidates.isEmpty ? null : candidates.first;
+      _status = decision.reason;
+    });
+  }
+
+  Future<void> _forceSelected() async {
+    final candidate = _selectedCandidate;
+    if (candidate != null) await _completeDiscovery(candidate);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _positionSubscription?.cancel();
+    _cameraController?.dispose();
+    _ocrService.dispose();
+    _simulatedTextController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
-    final selected = _selectedCandidate;
-    final automaticallyValid = selected != null && _matcher.canValidate(selected);
+    final controller = _cameraController;
+    final gpsPoint = _currentPoint;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Scanner une plaque'),
         actions: [
-          Row(
-            children: [
-              const Text('Dev'),
-              Switch(
-                value: _developerMode,
-                onChanged: (value) => setState(() => _developerMode = value),
+          if (gpsPoint != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(
+                child: Text(
+                  'GPS ±${(_currentAccuracy ?? 0).round()} m',
+                  style: Theme.of(context).textTheme.labelMedium,
+                ),
               ),
-            ],
-          ),
+            ),
         ],
       ),
       body: SafeArea(
         child: ListView(
-          padding: const EdgeInsets.all(16),
+          padding: const EdgeInsets.all(14),
           children: [
-            _ImagePanel(image: _image),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    onPressed: _processing ? null : () => _pickImage(ImageSource.camera),
-                    icon: const Icon(Icons.camera_alt_outlined),
-                    label: const Text('Caméra'),
-                  ),
+            AspectRatio(
+              aspectRatio: 3 / 4,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(22),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    ColoredBox(
+                      color: Colors.black,
+                      child: _initializing || controller == null || !controller.value.isInitialized
+                          ? const Center(child: CircularProgressIndicator())
+                          : CameraPreview(controller),
+                    ),
+                    const _ScannerFrameOverlay(),
+                    Positioned(
+                      left: 12,
+                      right: 12,
+                      bottom: 12,
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          color: const Color(0xD9141820),
+                          borderRadius: BorderRadius.circular(14),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Text(
+                            _status,
+                            textAlign: TextAlign.center,
+                            style: const TextStyle(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _processing ? null : () => _pickImage(ImageSource.gallery),
-                    icon: const Icon(Icons.photo_library_outlined),
-                    label: const Text('Galerie'),
-                  ),
+              ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 12),
+              Text(_error!, style: TextStyle(color: Theme.of(context).colorScheme.error)),
+            ],
+            if (_timedOut && !_completed) ...[
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: _retry,
+                icon: const Icon(Icons.refresh),
+                label: const Text('Réessayer le scan direct'),
+              ),
+            ],
+            if (widget.developerMode) ...[
+              const SizedBox(height: 18),
+              _DeveloperPanel(
+                currentPoint: gpsPoint,
+                simulatedTextController: _simulatedTextController,
+                onChooseGps: _chooseManualGps,
+                onUseRealGps: _useRealGps,
+                onPickImage: _pickDeveloperImage,
+                onTestText: _testSimulatedText,
+              ),
+              if (_lastOcr != null || _lastPlateCheck != null) ...[
+                const SizedBox(height: 14),
+                _DebugReadout(
+                  ocr: _lastOcr,
+                  plateCheck: _lastPlateCheck,
+                  decision: _decision,
+                  attempts: _attemptCount,
                 ),
               ],
-            ),
-            const SizedBox(height: 10),
-            OutlinedButton.icon(
-              onPressed: _processing ? null : _useRealGps,
-              icon: const Icon(Icons.my_location),
-              label: const Text('Utiliser le vrai GPS'),
-            ),
-            if (_processing) ...[
-              const SizedBox(height: 16),
-              const LinearProgressIndicator(),
-            ],
-            if (_error != null) ...[
-              const SizedBox(height: 14),
-              Text(
-                _error!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ],
-            if (_developerMode) ...[
-              const SizedBox(height: 22),
-              _DeveloperPanel(
-                simulatedTextController: _simulatedTextController,
-                latitudeController: _latitudeController,
-                longitudeController: _longitudeController,
-                recognizedText: _recognizedText,
-                onAnalyze: _processing ? null : _analyzeSimulatedText,
-              ),
-            ],
-            if (_candidates.isNotEmpty) ...[
-              const SizedBox(height: 22),
-              Text('Candidats', style: Theme.of(context).textTheme.titleLarge),
-              const SizedBox(height: 10),
-              ..._candidates.map(
-                (candidate) => _CandidateCard(
-                  candidate: candidate,
-                  selected: identical(candidate, _selectedCandidate),
-                  showDebug: _developerMode,
-                  onTap: () => setState(() => _selectedCandidate = candidate),
+              if (_candidates.isNotEmpty) ...[
+                const SizedBox(height: 14),
+                Text('Candidats GPS + OCR', style: Theme.of(context).textTheme.titleLarge),
+                const SizedBox(height: 8),
+                ..._candidates.map(
+                  (candidate) => _CandidateCard(
+                    candidate: candidate,
+                    selected: identical(candidate, _selectedCandidate),
+                    onTap: () => setState(() => _selectedCandidate = candidate),
+                  ),
                 ),
-              ),
-              const SizedBox(height: 12),
-              if (!automaticallyValid)
-                const Text(
-                  'Le score automatique est trop faible. En mode développeur, tu peux quand même confirmer la bonne rue pour tester le reste du jeu.',
+                FilledButton.tonalIcon(
+                  onPressed: _selectedCandidate == null ? null : _forceSelected,
+                  icon: const Icon(Icons.build),
+                  label: const Text('Forcer ce candidat (développeur)'),
                 ),
-              const SizedBox(height: 10),
-              FilledButton.icon(
-                onPressed: selected == null || (!automaticallyValid && !_developerMode)
-                    ? null
-                    : _validateSelection,
-                icon: const Icon(Icons.add_task),
-                label: Text(
-                  automaticallyValid ? 'Valider la découverte' : 'Forcer la validation (dev)',
-                ),
-              ),
+              ],
             ],
           ],
         ),
@@ -299,34 +517,22 @@ class _ScannerScreenState extends State<ScannerScreen> {
   }
 }
 
-class _ImagePanel extends StatelessWidget {
-  const _ImagePanel({required this.image});
-
-  final XFile? image;
+class _ScannerFrameOverlay extends StatelessWidget {
+  const _ScannerFrameOverlay();
 
   @override
   Widget build(BuildContext context) {
-    return AspectRatio(
-      aspectRatio: 16 / 10,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(18),
-        child: ColoredBox(
-          color: Theme.of(context).colorScheme.surfaceContainerHighest,
-          child: image == null
-              ? const Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.signpost_outlined, size: 58),
-                      SizedBox(height: 10),
-                      Text('Cadre la plaque de rue'),
-                    ],
-                  ),
-                )
-              : Image.file(
-                  File(image!.path),
-                  fit: BoxFit.cover,
-                ),
+    return IgnorePointer(
+      child: Center(
+        child: FractionallySizedBox(
+          widthFactor: 0.88,
+          heightFactor: 0.31,
+          child: Container(
+            decoration: BoxDecoration(
+              border: Border.all(color: Colors.white, width: 2),
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
         ),
       ),
     );
@@ -335,18 +541,20 @@ class _ImagePanel extends StatelessWidget {
 
 class _DeveloperPanel extends StatelessWidget {
   const _DeveloperPanel({
+    required this.currentPoint,
     required this.simulatedTextController,
-    required this.latitudeController,
-    required this.longitudeController,
-    required this.recognizedText,
-    required this.onAnalyze,
+    required this.onChooseGps,
+    required this.onUseRealGps,
+    required this.onPickImage,
+    required this.onTestText,
   });
 
+  final GeoPoint? currentPoint;
   final TextEditingController simulatedTextController;
-  final TextEditingController latitudeController;
-  final TextEditingController longitudeController;
-  final String recognizedText;
-  final VoidCallback? onAnalyze;
+  final VoidCallback onChooseGps;
+  final VoidCallback onUseRealGps;
+  final VoidCallback onPickImage;
+  final VoidCallback onTestText;
 
   @override
   Widget build(BuildContext context) {
@@ -359,51 +567,87 @@ class _DeveloperPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Mode développeur', style: Theme.of(context).textTheme.titleMedium),
+          Text('Outils développeur', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 8),
+          Text(
+            currentPoint == null
+                ? 'Aucune position active'
+                : '${currentPoint!.latitude.toStringAsFixed(6)}, ${currentPoint!.longitude.toStringAsFixed(6)}',
+          ),
+          const SizedBox(height: 10),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: onChooseGps,
+                icon: const Icon(Icons.map_outlined),
+                label: const Text('Choisir sur la carte'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onUseRealGps,
+                icon: const Icon(Icons.my_location),
+                label: const Text('GPS réel'),
+              ),
+              OutlinedButton.icon(
+                onPressed: onPickImage,
+                icon: const Icon(Icons.photo_library_outlined),
+                label: const Text('Importer une image'),
+              ),
+            ],
+          ),
           const SizedBox(height: 12),
           TextField(
             controller: simulatedTextController,
             minLines: 2,
-            maxLines: 5,
-            decoration: const InputDecoration(
-              labelText: 'Texte OCR simulé',
-              hintText: 'Ex. RUE VICT0R HUG0',
-            ),
+            maxLines: 4,
+            decoration: const InputDecoration(labelText: 'Texte OCR simulé'),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  controller: latitudeController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                  decoration: const InputDecoration(labelText: 'Latitude'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: TextField(
-                  controller: longitudeController,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
-                  decoration: const InputDecoration(labelText: 'Longitude'),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           FilledButton.tonalIcon(
-            onPressed: onAnalyze,
+            onPressed: onTestText,
             icon: const Icon(Icons.science_outlined),
-            label: const Text('Tester la reconnaissance'),
+            label: const Text('Tester le texte'),
           ),
-          if (recognizedText.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            Text('Texte réellement lu', style: Theme.of(context).textTheme.labelLarge),
-            const SizedBox(height: 6),
-            SelectableText(recognizedText),
-          ],
         ],
       ),
+    );
+  }
+}
+
+class _DebugReadout extends StatelessWidget {
+  const _DebugReadout({
+    required this.ocr,
+    required this.plateCheck,
+    required this.decision,
+    required this.attempts,
+  });
+
+  final OcrScanResult? ocr;
+  final PlateCheckResult? plateCheck;
+  final MatchDecision? decision;
+  final int attempts;
+
+  @override
+  Widget build(BuildContext context) {
+    return ExpansionTile(
+      title: const Text('Détails de l’analyse'),
+      subtitle: Text('$attempts image(s) analysée(s)'),
+      childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+      expandedCrossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (plateCheck != null) ...[
+          Text('Plaque probable : ${plateCheck!.percentage} %'),
+          ...plateCheck!.diagnostics.map((line) => Text(line)),
+          const SizedBox(height: 10),
+        ],
+        if (decision != null) Text('Décision : ${decision!.reason}'),
+        if (ocr != null && ocr!.fullText.isNotEmpty) ...[
+          const SizedBox(height: 10),
+          const Text('Texte OCR :'),
+          SelectableText(ocr!.fullText),
+        ],
+      ],
     );
   }
 }
@@ -412,59 +656,24 @@ class _CandidateCard extends StatelessWidget {
   const _CandidateCard({
     required this.candidate,
     required this.selected,
-    required this.showDebug,
     required this.onTap,
   });
 
   final MatchCandidate candidate;
   final bool selected;
-  final bool showDebug;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final distance = candidate.distanceMeters;
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Card(
-        color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.all(14),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Radio<bool>(
-                  value: true,
-                  groupValue: selected,
-                  onChanged: (_) => onTap(),
-                ),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        candidate.street.officialName,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 4),
-                      Text('${candidate.percentage} % de confiance'),
-                      if (distance != null)
-                        Text('Distance : ${distance.round()} m'),
-                      if (showDebug) ...[
-                        const SizedBox(height: 6),
-                        Text('OCR : ${candidate.textPercentage} %'),
-                        Text('Fragment : “${candidate.matchedFragment}”'),
-                      ],
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
+    return Card(
+      color: selected ? Theme.of(context).colorScheme.primaryContainer : null,
+      child: ListTile(
+        onTap: onTap,
+        leading: Radio<bool>(value: true, groupValue: selected, onChanged: (_) => onTap()),
+        title: Text(candidate.street.officialName),
+        subtitle: Text(
+          'Score ${candidate.percentage} % · nom ${candidate.textPercentage} % · couverture ${candidate.coveragePercentage} %'
+          '${candidate.distanceMeters == null ? '' : ' · ${candidate.distanceMeters!.round()} m'}',
         ),
       ),
     );

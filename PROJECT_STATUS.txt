@@ -1,7 +1,20 @@
-RueDex MVP 0.1
-- Source Flutter Android preparee
-- OCR ML Kit
-- GPS reel/simule
-- Matching flou
-- Pokedex local
-- Mode developpeur
+RueDex V2 — prototype Paris
+
+TERMINE DANS CETTE VERSION
+- scanner automatique sans bouton photo
+- GPS automatique
+- matching OCR sans poids artificiel du mot RUE
+- validation stricte + marge entre candidats
+- géométrie complète par tronçons
+- filtre provisoire de plaque (cadre/fond/contraste/netteté)
+- carte de Paris sans noms
+- mode développeur avec GPS sur carte
+- APK développeur et APK utilisateur séparés
+- import automatique de la base officielle de Paris dans GitHub Actions
+- origine officielle affichée seulement si renseignée
+
+A FAIRE PLUS TARD
+- entraîner le véritable détecteur IA de plaques
+- construire la rareté nationale à partir d'une source exhaustive
+- calibrer les seuils avec un grand lot de vraies photos
+- comptes, sauvegarde serveur et publication Play Store

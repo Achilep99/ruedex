@@ -2,11 +2,12 @@ $ErrorActionPreference = "Stop"
 
 $manifestPath = Join-Path $PSScriptRoot "..\android\app\src\main\AndroidManifest.xml"
 if (-not (Test-Path $manifestPath)) {
-    throw "AndroidManifest.xml introuvable. Lance d'abord PREPARER_PROJET_WINDOWS.bat"
+    throw "AndroidManifest.xml introuvable. Lance d'abord flutter create."
 }
 
 $content = Get-Content $manifestPath -Raw
 $permissions = @(
+    '<uses-permission android:name="android.permission.CAMERA" />',
     '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />',
     '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />'
 )
@@ -15,6 +16,11 @@ foreach ($permission in $permissions) {
     if (-not $content.Contains($permission)) {
         $content = $content.Replace('<manifest xmlns:android="http://schemas.android.com/apk/res/android">', "<manifest xmlns:android=`"http://schemas.android.com/apk/res/android`">`r`n    $permission")
     }
+}
+
+$cameraFeature = '<uses-feature android:name="android.hardware.camera.any" android:required="true" />'
+if (-not $content.Contains($cameraFeature)) {
+    $content = $content.Replace('<application', "    $cameraFeature`r`n    <application")
 }
 
 $content = $content.Replace('android:label="ruedex_mvp"', 'android:label="RueDex"')
@@ -33,4 +39,4 @@ if (Test-Path $gradleKtsPath) {
     Set-Content -Path $gradleGroovyPath -Value $gradleContent -Encoding UTF8
 }
 
-Write-Host "Configuration Android appliquee (GPS + minSdk 24)." -ForegroundColor Green
+Write-Host "Configuration Android appliquee (camera + GPS + minSdk 24)." -ForegroundColor Green

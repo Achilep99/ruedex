@@ -1,4 +1,4 @@
-name: Construire APK RueDex
+name: Construire APK RueDex V2
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Recuperer le projet
+      - name: Récupérer le projet
         uses: actions/checkout@v4
 
       - name: Installer Java 17
@@ -28,26 +28,59 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Creer les fichiers Android manquants
-        run: flutter create --platforms=android --org com.ruedex .
+      - name: Créer les fichiers Android manquants
+        run: |
+          flutter create --platforms=android --org com.ruedex .
+          rm -f test/widget_test.dart
+
+      - name: Télécharger la base officielle de Paris
+        run: |
+          mkdir -p build_data
+          curl -L --fail --retry 4 --retry-delay 3 \
+            "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/denominations-emprises-voies-actuelles/exports/json" \
+            -o build_data/denominations.json
+          curl -L --fail --retry 4 --retry-delay 3 \
+            "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/troncon_voie/exports/json" \
+            -o build_data/troncons.json
+
+      - name: Générer la base RueDex de Paris
+        run: |
+          python tools/build_paris_database.py \
+            --denominations build_data/denominations.json \
+            --segments build_data/troncons.json \
+            --rarity-overrides assets/data/rarity_overrides.json \
+            --output assets/data/paris_streets.json \
+            --minimum-streets 3000
+          du -h assets/data/paris_streets.json
 
       - name: Configurer Android
         shell: pwsh
         run: ./tools/configure_android.ps1
 
-      - name: Installer les dependances
+      - name: Installer les dépendances
         run: flutter pub get
 
-      - name: Executer les tests
+      - name: Formater le code
+        run: dart format lib test
+
+      - name: Analyser le code
+        run: flutter analyze
+
+      - name: Exécuter les tests
         run: flutter test
 
-      - name: Construire APK de test
-        run: flutter build apk --debug
+      - name: Construire les deux APK
+        run: |
+          mkdir -p artifacts
+          flutter build apk --debug --dart-define=RUEDEX_DEV_TOOLS=true
+          cp build/app/outputs/flutter-apk/app-debug.apk artifacts/RueDex-developpeur.apk
+          flutter build apk --debug --dart-define=RUEDEX_DEV_TOOLS=false
+          cp build/app/outputs/flutter-apk/app-debug.apk artifacts/RueDex-utilisateur.apk
 
-      - name: Publier APK telechargeable
+      - name: Publier les APK téléchargeables
         uses: actions/upload-artifact@v4
         with:
-          name: RueDex-APK
-          path: build/app/outputs/flutter-apk/app-debug.apk
+          name: RueDex-V2-APK
+          path: artifacts/*.apk
           if-no-files-found: error
           retention-days: 14
