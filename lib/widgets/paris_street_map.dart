@@ -273,7 +273,9 @@ Offset _project(GeoPoint point) {
 GeoPoint _unproject(Offset projected) {
   final longitude = projected.dx * 180.0 / math.pi;
   final latitude =
-      math.atan(math.sinh(projected.dy)) * 180.0 / math.pi;
+      (2.0 * math.atan(math.exp(projected.dy)) - math.pi / 2.0) *
+          180.0 /
+          math.pi;
   return GeoPoint(latitude, longitude);
 }
 

@@ -87,7 +87,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       _cameraPaused = true;
     } else if (state == AppLifecycleState.resumed) {
       _cameraPaused = false;
-      if (!_completed && !_timedOut) _scanLoop();
+      if (!_completed && !_timedOut) {
+        _scanLoop();
+      }
     }
   }
 
@@ -126,14 +128,18 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         onError: (_) {},
       );
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() => _error = error.toString());
+      }
     }
   }
 
   Future<void> _initializeCamera() async {
     try {
       final cameras = await availableCameras();
-      if (cameras.isEmpty) throw StateError('Aucune caméra disponible.');
+      if (cameras.isEmpty) {
+        throw StateError('Aucune caméra disponible.');
+      }
       final backCamera = cameras.firstWhere(
         (camera) => camera.lensDirection == CameraLensDirection.back,
         orElse: () => cameras.first,
@@ -193,7 +199,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
         }
       }
     } catch (error) {
-      if (mounted) setState(() => _error = 'Analyse caméra impossible : $error');
+      if (mounted) {
+        setState(() => _error = 'Analyse caméra impossible : $error');
+      }
     } finally {
       _processingFrame = false;
       if (mounted && !_completed && !_timedOut && !_cameraPaused) {
@@ -396,7 +404,9 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
       final position = await _locationService.determinePosition();
       if (mounted) setState(() => _realPosition = position);
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() => _error = error.toString());
+      }
     }
   }
 
