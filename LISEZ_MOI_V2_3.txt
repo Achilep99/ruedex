@@ -1,0 +1,10 @@
+RueDex V2.3 — correctif carte robuste
+
+Fichiers remplacés :
+- lib/widgets/paris_street_map.dart
+- lib/screens/paris_map_screen.dart
+
+La carte utilise maintenant Web Mercator, recalcule ses dimensions à partir de
+l'ensemble des vrais tronçons et corrige automatiquement un éventuel ordre
+latitude/longitude inversé. La mention « Carte V2.3 · aucun nom » permet de
+vérifier immédiatement que le nouvel APK est bien installé.

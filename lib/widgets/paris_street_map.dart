@@ -12,6 +12,8 @@ class ParisStreetMap extends StatefulWidget {
     required this.bounds,
     this.discoveredIds = const {},
     this.selectedPoint,
+    this.teamOwnership = const {},
+    this.teamColorResolver,
     this.onPointSelected,
     this.showLegend = true,
     super.key,
@@ -21,6 +23,8 @@ class ParisStreetMap extends StatefulWidget {
   final GeoBounds bounds;
   final Set<String> discoveredIds;
   final GeoPoint? selectedPoint;
+  final Map<String, String> teamOwnership;
+  final Color? Function(String? teamId)? teamColorResolver;
   final ValueChanged<GeoPoint>? onPointSelected;
   final bool showLegend;
 
@@ -31,6 +35,30 @@ class ParisStreetMap extends StatefulWidget {
 class _ParisStreetMapState extends State<ParisStreetMap> {
   final TransformationController _transformationController =
       TransformationController();
+
+  late _ProjectionDomain _domain;
+
+  @override
+  void initState() {
+    super.initState();
+    _domain = _ProjectionDomain.fromStreets(
+      widget.streets,
+      fallbackBounds: widget.bounds,
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant ParisStreetMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.streets, widget.streets) ||
+        oldWidget.bounds != widget.bounds) {
+      _domain = _ProjectionDomain.fromStreets(
+        widget.streets,
+        fallbackBounds: widget.bounds,
+      );
+      _transformationController.value = Matrix4.identity();
+    }
+  }
 
   @override
   void dispose() {
@@ -46,7 +74,8 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
           child: LayoutBuilder(
             builder: (context, constraints) {
               final size = Size(constraints.maxWidth, constraints.maxHeight);
-              final projection = _MapProjection(widget.bounds, size);
+              final projection = _MapProjection(_domain, size);
+
               return ClipRRect(
                 borderRadius: BorderRadius.circular(20),
                 child: InteractiveViewer(
@@ -70,6 +99,8 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
                         projection: projection,
                         discoveredIds: widget.discoveredIds,
                         selectedPoint: widget.selectedPoint,
+                        teamOwnership: widget.teamOwnership,
+                        teamColorResolver: widget.teamColorResolver,
                       ),
                     ),
                   ),
@@ -100,48 +131,86 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
   }
 }
 
-/// Projection locale adaptée à Paris.
+class _ProjectionDomain {
+  const _ProjectionDomain({
+    required this.minX,
+    required this.maxX,
+    required this.minY,
+    required this.maxY,
+  });
+
+  final double minX;
+  final double maxX;
+  final double minY;
+  final double maxY;
+
+  factory _ProjectionDomain.fromStreets(
+    List<StreetEntry> streets, {
+    required GeoBounds fallbackBounds,
+  }) {
+    var minX = double.infinity;
+    var maxX = double.negativeInfinity;
+    var minY = double.infinity;
+    var maxY = double.negativeInfinity;
+
+    for (final street in streets) {
+      for (final segment in street.segments) {
+        for (final rawPoint in segment) {
+          final point = _normaliseParisPoint(rawPoint);
+          final projected = _project(point);
+          minX = math.min(minX, projected.dx);
+          maxX = math.max(maxX, projected.dx);
+          minY = math.min(minY, projected.dy);
+          maxY = math.max(maxY, projected.dy);
+        }
+      }
+    }
+
+    if (!minX.isFinite || !maxX.isFinite || !minY.isFinite || !maxY.isFinite) {
+      final southWest = _project(
+        GeoPoint(fallbackBounds.minLatitude, fallbackBounds.minLongitude),
+      );
+      final northEast = _project(
+        GeoPoint(fallbackBounds.maxLatitude, fallbackBounds.maxLongitude),
+      );
+      minX = math.min(southWest.dx, northEast.dx);
+      maxX = math.max(southWest.dx, northEast.dx);
+      minY = math.min(southWest.dy, northEast.dy);
+      maxY = math.max(southWest.dy, northEast.dy);
+    }
+
+    final width = math.max(0.000001, maxX - minX);
+    final height = math.max(0.000001, maxY - minY);
+    final xPadding = width * 0.025;
+    final yPadding = height * 0.025;
+
+    return _ProjectionDomain(
+      minX: minX - xPadding,
+      maxX: maxX + xPadding,
+      minY: minY - yPadding,
+      maxY: maxY + yPadding,
+    );
+  }
+}
+
+/// Projection Web Mercator calculée directement depuis les vrais tronçons.
 ///
-/// Deux corrections sont importantes :
-/// - la longitude est multipliée par cos(latitude), car un degré de longitude
-///   est plus court qu'un degré de latitude à Paris ;
-/// - un seul facteur d'échelle est utilisé pour les deux axes, afin de ne
-///   jamais étirer la ville pour remplir l'écran.
+/// On ne fait plus confiance aux dimensions déjà enregistrées dans les
+/// métadonnées. Un seul facteur d'échelle est utilisé pour les deux axes : la
+/// carte ne peut donc plus être étirée pour remplir un écran vertical.
 class _MapProjection {
-  _MapProjection(this.bounds, this.size) {
-    final centerLatitude =
-        (bounds.minLatitude + bounds.maxLatitude) / 2.0;
-    _centerLongitude =
-        (bounds.minLongitude + bounds.maxLongitude) / 2.0;
-    _longitudeFactor = math.cos(centerLatitude * math.pi / 180.0);
-
-    _minProjectedX =
-        (bounds.minLongitude - _centerLongitude) * _longitudeFactor;
-    _maxProjectedX =
-        (bounds.maxLongitude - _centerLongitude) * _longitudeFactor;
-
-    final projectedWidth = math
-        .max(0.000001, _maxProjectedX - _minProjectedX)
-        .toDouble();
-    final projectedHeight = math
-        .max(
-          0.000001,
-          bounds.maxLatitude - bounds.minLatitude,
-        )
-        .toDouble();
+  _MapProjection(this.domain, this.size) {
+    final projectedWidth = math.max(0.000001, domain.maxX - domain.minX);
+    final projectedHeight = math.max(0.000001, domain.maxY - domain.minY);
 
     const padding = 18.0;
-    final availableWidth =
-        math.max(1.0, size.width - padding * 2).toDouble();
-    final availableHeight =
-        math.max(1.0, size.height - padding * 2).toDouble();
+    final availableWidth = math.max(1.0, size.width - padding * 2);
+    final availableHeight = math.max(1.0, size.height - padding * 2);
 
-    _scale = math
-        .min(
-          availableWidth / projectedWidth,
-          availableHeight / projectedHeight,
-        )
-        .toDouble();
+    _scale = math.min(
+      availableWidth / projectedWidth,
+      availableHeight / projectedHeight,
+    );
 
     final renderedWidth = projectedWidth * _scale;
     final renderedHeight = projectedHeight * _scale;
@@ -149,39 +218,63 @@ class _MapProjection {
     _offsetY = (size.height - renderedHeight) / 2.0;
   }
 
-  final GeoBounds bounds;
+  final _ProjectionDomain domain;
   final Size size;
 
-  late final double _centerLongitude;
-  late final double _longitudeFactor;
-  late final double _minProjectedX;
-  late final double _maxProjectedX;
   late final double _scale;
   late final double _offsetX;
   late final double _offsetY;
 
-  Offset toOffset(GeoPoint point) {
-    final projectedX =
-        (point.longitude - _centerLongitude) * _longitudeFactor;
-    final x = _offsetX + (projectedX - _minProjectedX) * _scale;
-    final y = _offsetY +
-        (bounds.maxLatitude - point.latitude) * _scale;
+  Offset toOffset(GeoPoint rawPoint) {
+    final point = _normaliseParisPoint(rawPoint);
+    final projected = _project(point);
+    final x = _offsetX + (projected.dx - domain.minX) * _scale;
+    final y = _offsetY + (domain.maxY - projected.dy) * _scale;
     return Offset(x, y);
   }
 
   GeoPoint toGeo(Offset offset) {
-    final projectedX =
-        _minProjectedX + (offset.dx - _offsetX) / _scale;
-    final longitude =
-        _centerLongitude + projectedX / _longitudeFactor;
-    final latitude =
-        bounds.maxLatitude - (offset.dy - _offsetY) / _scale;
-
-    return GeoPoint(
-      latitude.clamp(bounds.minLatitude, bounds.maxLatitude).toDouble(),
-      longitude.clamp(bounds.minLongitude, bounds.maxLongitude).toDouble(),
-    );
+    final projectedX = domain.minX + (offset.dx - _offsetX) / _scale;
+    final projectedY = domain.maxY - (offset.dy - _offsetY) / _scale;
+    return _unproject(Offset(projectedX, projectedY));
   }
+}
+
+GeoPoint _normaliseParisPoint(GeoPoint point) {
+  final looksNormal = point.latitude >= 47.0 &&
+      point.latitude <= 50.0 &&
+      point.longitude >= 1.0 &&
+      point.longitude <= 4.0;
+  if (looksNormal) {
+    return point;
+  }
+
+  final looksSwapped = point.longitude >= 47.0 &&
+      point.longitude <= 50.0 &&
+      point.latitude >= 1.0 &&
+      point.latitude <= 4.0;
+  if (looksSwapped) {
+    return GeoPoint(point.longitude, point.latitude);
+  }
+
+  return point;
+}
+
+Offset _project(GeoPoint point) {
+  final latitude = point.latitude.clamp(-85.05112878, 85.05112878);
+  final longitudeRadians = point.longitude * math.pi / 180.0;
+  final latitudeRadians = latitude * math.pi / 180.0;
+  final mercatorY = math.log(
+    math.tan(math.pi / 4.0 + latitudeRadians / 2.0),
+  );
+  return Offset(longitudeRadians, mercatorY);
+}
+
+GeoPoint _unproject(Offset projected) {
+  final longitude = projected.dx * 180.0 / math.pi;
+  final latitude =
+      math.atan(math.sinh(projected.dy)) * 180.0 / math.pi;
+  return GeoPoint(latitude, longitude);
 }
 
 class _ParisStreetPainter extends CustomPainter {
@@ -190,12 +283,16 @@ class _ParisStreetPainter extends CustomPainter {
     required this.projection,
     required this.discoveredIds,
     required this.selectedPoint,
+    required this.teamOwnership,
+    required this.teamColorResolver,
   });
 
   final List<StreetEntry> streets;
   final _MapProjection projection;
   final Set<String> discoveredIds;
   final GeoPoint? selectedPoint;
+  final Map<String, String> teamOwnership;
+  final Color? Function(String? teamId)? teamColorResolver;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -204,15 +301,23 @@ class _ParisStreetPainter extends CustomPainter {
       Paint()..color = const Color(0xFF10141B),
     );
 
-    final paths = <StreetRarity, Path>{
+    final rarityPaths = <StreetRarity, Path>{
       for (final rarity in StreetRarity.values) rarity: Path(),
     };
+    final teamPaths = <String, Path>{};
     final undiscoveredPath = Path();
 
     for (final street in streets) {
-      final target = discoveredIds.contains(street.id)
-          ? paths[street.rarity]!
-          : undiscoveredPath;
+      final teamId = teamOwnership[street.id];
+      final Path target;
+      if (teamId != null) {
+        target = teamPaths.putIfAbsent(teamId, () => Path());
+      } else if (discoveredIds.contains(street.id)) {
+        target = rarityPaths[street.rarity]!;
+      } else {
+        target = undiscoveredPath;
+      }
+
       for (final segment in street.segments) {
         if (segment.length < 2) {
           continue;
@@ -235,13 +340,25 @@ class _ParisStreetPainter extends CustomPainter {
         ..strokeCap = StrokeCap.round,
     );
 
-    for (final entry in paths.entries) {
+    for (final entry in rarityPaths.entries) {
       canvas.drawPath(
         entry.value,
         Paint()
           ..color = rarityColor(entry.key)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 2.4
+          ..strokeCap = StrokeCap.round,
+      );
+    }
+
+    for (final entry in teamPaths.entries) {
+      final color = teamColorResolver?.call(entry.key) ?? const Color(0xFFFFFFFF);
+      canvas.drawPath(
+        entry.value,
+        Paint()
+          ..color = color
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.7
           ..strokeCap = StrokeCap.round,
       );
     }
@@ -257,6 +374,7 @@ class _ParisStreetPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ParisStreetPainter oldDelegate) {
     return oldDelegate.discoveredIds != discoveredIds ||
+        oldDelegate.teamOwnership != teamOwnership ||
         oldDelegate.selectedPoint != selectedPoint ||
         oldDelegate.streets != streets ||
         oldDelegate.projection.size != projection.size;
@@ -276,7 +394,7 @@ class _MapLegend extends StatelessWidget {
       child: const Padding(
         padding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
         child: Text(
-          'Gris : à découvrir\nCouleur : capturée',
+          'Gris : à découvrir\nCouleur : équipe ou rareté',
           style: TextStyle(fontSize: 11, fontWeight: FontWeight.w700),
         ),
       ),

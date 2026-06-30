@@ -7,4 +7,12 @@ class AppConfig {
     'RUEDEX_DEV_TOOLS',
     defaultValue: true,
   );
+
+  /// Ces valeurs sont injectées par GitHub Actions avec des Secrets.
+  /// Si elles sont vides, RueDex reste en mode local/offline.
+  static const String supabaseUrl = String.fromEnvironment('SUPABASE_URL');
+  static const String supabaseAnonKey = String.fromEnvironment('SUPABASE_ANON_KEY');
+
+  static bool get supabaseConfigured =>
+      supabaseUrl.trim().isNotEmpty && supabaseAnonKey.trim().isNotEmpty;
 }

@@ -15,6 +15,7 @@ import '../models/street_database.dart';
 import '../services/discovery_store.dart';
 import '../services/location_service.dart';
 import '../services/ocr_service.dart';
+import '../services/online_game_service.dart';
 import '../services/plate_heuristic_service.dart';
 import '../services/scan_frame_service.dart';
 import '../services/street_matcher.dart';
@@ -25,12 +26,14 @@ class ScannerScreen extends StatefulWidget {
   const ScannerScreen({
     required this.database,
     required this.discoveryStore,
+    required this.onlineGameService,
     required this.developerMode,
     super.key,
   });
 
   final StreetDatabase database;
   final DiscoveryStore discoveryStore;
+  final OnlineGameService onlineGameService;
   final bool developerMode;
 
   @override
@@ -280,9 +283,29 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
     if (_completed) return;
     _completed = true;
     final isNew = await widget.discoveryStore.addDiscovery(candidate.street.id);
+    CaptureResult? onlineCapture;
+    if (widget.onlineGameService.isConfigured) {
+      try {
+        onlineCapture = await widget.onlineGameService.captureStreet(
+          candidate: candidate,
+          plateScore: _lastPlateCheck?.score ?? 0,
+        );
+      } catch (error) {
+        onlineCapture = CaptureResult(
+          accepted: false,
+          message: 'Capture locale OK, serveur refusé : $error',
+        );
+      }
+    }
     if (!mounted) return;
     setState(() {
-      _status = isNew ? 'Rue capturée !' : 'Rue déjà présente dans ton RueDex.';
+      if (onlineCapture == null) {
+        _status = isNew ? 'Rue capturée !' : 'Rue déjà présente dans ton RueDex.';
+      } else if (onlineCapture.accepted) {
+        _status = 'Rue capturée pour ton équipe !';
+      } else {
+        _status = onlineCapture.message;
+      }
     });
 
     await showDialog<void>(
@@ -297,6 +320,12 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             Text(candidate.street.officialName, style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 10),
             RarityBadge(rarity: candidate.street.rarity),
+            if (onlineCapture != null) ...[
+              const SizedBox(height: 12),
+              Text(onlineCapture.accepted
+                  ? 'Saison : ${onlineCapture.message}'
+                  : 'Saison non mise à jour : ${onlineCapture.message}'),
+            ],
             if (candidate.street.hasVerifiedOrigin) ...[
               const SizedBox(height: 16),
               Text(candidate.street.origin),

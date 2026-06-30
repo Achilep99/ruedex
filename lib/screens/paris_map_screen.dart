@@ -2,17 +2,20 @@ import 'package:flutter/material.dart';
 
 import '../models/street_database.dart';
 import '../services/discovery_store.dart';
+import '../services/online_game_service.dart';
 import '../widgets/paris_street_map.dart';
 
 class ParisMapScreen extends StatefulWidget {
   const ParisMapScreen({
     required this.database,
     required this.discoveryStore,
+    required this.onlineGameService,
     super.key,
   });
 
   final StreetDatabase database;
   final DiscoveryStore discoveryStore;
+  final OnlineGameService onlineGameService;
 
   @override
   State<ParisMapScreen> createState() => _ParisMapScreenState();
@@ -20,6 +23,8 @@ class ParisMapScreen extends StatefulWidget {
 
 class _ParisMapScreenState extends State<ParisMapScreen> {
   Set<String> _discoveredIds = const {};
+  Map<String, String> _onlineOwnership = const {};
+  String? _onlineStatus;
 
   @override
   void initState() {
@@ -29,11 +34,34 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
 
   Future<void> _load() async {
     final ids = await widget.discoveryStore.loadDiscoveredIds();
-    if (mounted) setState(() => _discoveredIds = ids);
+    var ownership = const <String, String>{};
+    String? status;
+    if (widget.onlineGameService.isConfigured) {
+      try {
+        ownership = await widget.onlineGameService.loadStreetOwnership();
+        status = 'Saison en ligne';
+      } catch (error) {
+        status = 'Carte locale · serveur inaccessible';
+      }
+    } else {
+      status = 'Carte locale';
+    }
+    if (mounted) {
+      setState(() {
+        _discoveredIds = ids;
+        _onlineOwnership = ownership;
+        _onlineStatus = status;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final onlineCount = _onlineOwnership.length;
+    final localCount = _discoveredIds.length;
+    final total = widget.database.streets.length;
+    final displayedCount = onlineCount == 0 ? localCount : onlineCount;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Ma carte de Paris'),
@@ -44,11 +72,11 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
             child: Row(
               children: [
                 Text(
-                  '${_discoveredIds.length} / ${widget.database.streets.length} rues',
+                  '$displayedCount / $total rues',
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
                 const Spacer(),
-                const Text('Aucun nom affiché'),
+                Text(_onlineStatus ?? 'Chargement…'),
               ],
             ),
           ),
@@ -60,6 +88,8 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
           streets: widget.database.streets,
           bounds: widget.database.bounds,
           discoveredIds: _discoveredIds,
+          teamOwnership: _onlineOwnership,
+          teamColorResolver: widget.onlineGameService.colorForTeam,
         ),
       ),
     );

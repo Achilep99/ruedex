@@ -4,21 +4,25 @@ import '../config/app_config.dart';
 import '../models/street_database.dart';
 import '../services/app_settings_store.dart';
 import '../services/discovery_store.dart';
+import '../services/online_game_service.dart';
 import 'paris_map_screen.dart';
 import 'pokedex_screen.dart';
 import 'scanner_screen.dart';
+import 'team_choice_screen.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({
     required this.database,
     required this.discoveryStore,
     required this.settingsStore,
+    required this.onlineGameService,
     super.key,
   });
 
   final StreetDatabase database;
   final DiscoveryStore discoveryStore;
   final AppSettingsStore settingsStore;
+  final OnlineGameService onlineGameService;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -26,6 +30,8 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   Set<String> _discoveredIds = const {};
+  OnlinePlayerProfile? _onlineProfile;
+  String? _onlineStatus;
   bool _developerMode = false;
   bool _loading = true;
 
@@ -38,10 +44,29 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _reload() async {
     final ids = await widget.discoveryStore.loadDiscoveredIds();
     final developerMode = await widget.settingsStore.loadDeveloperMode();
+    OnlinePlayerProfile? profile;
+    String? onlineStatus;
+
+    if (widget.onlineGameService.isConfigured) {
+      try {
+        profile = await widget.onlineGameService.ensureReady();
+        final team = widget.onlineGameService.teamById(profile?.teamId);
+        onlineStatus = team == null
+            ? 'Serveur connecté · aucune équipe choisie'
+            : 'Serveur connecté · équipe ${team.label}';
+      } catch (error) {
+        onlineStatus = 'Serveur configuré mais inaccessible : $error';
+      }
+    } else {
+      onlineStatus = 'Mode local · Supabase non configuré';
+    }
+
     if (!mounted) return;
     setState(() {
       _discoveredIds = ids;
       _developerMode = developerMode;
+      _onlineProfile = profile;
+      _onlineStatus = onlineStatus;
       _loading = false;
     });
   }
@@ -52,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => ScannerScreen(
           database: widget.database,
           discoveryStore: widget.discoveryStore,
+          onlineGameService: widget.onlineGameService,
           developerMode: _developerMode,
         ),
       ),
@@ -78,9 +104,23 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => ParisMapScreen(
           database: widget.database,
           discoveryStore: widget.discoveryStore,
+          onlineGameService: widget.onlineGameService,
         ),
       ),
     );
+    await _reload();
+  }
+
+  Future<void> _chooseTeam() async {
+    if (!widget.onlineGameService.isConfigured) return;
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => TeamChoiceScreen(
+          onlineGameService: widget.onlineGameService,
+        ),
+      ),
+    );
+    await _reload();
   }
 
   Future<void> _showSettings() async {
@@ -123,6 +163,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final count = _discoveredIds.length;
     final total = widget.database.streets.length;
     final progress = total == 0 ? 0.0 : count / total;
+    final team = widget.onlineGameService.teamById(_onlineProfile?.teamId);
 
     return Scaffold(
       appBar: AppBar(
@@ -186,6 +227,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ),
+            const SizedBox(height: 12),
+            _OnlineGameCard(
+              serviceConfigured: widget.onlineGameService.isConfigured,
+              onlineStatus: _onlineStatus,
+              team: team,
+              onChooseTeam: _chooseTeam,
+            ),
             const SizedBox(height: 18),
             FilledButton.icon(
               onPressed: _openScanner,
@@ -226,6 +274,57 @@ class _HomeScreenState extends State<HomeScreen> {
               'Données géographiques : ${widget.database.sourceLabel}',
               style: Theme.of(context).textTheme.bodySmall,
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _OnlineGameCard extends StatelessWidget {
+  const _OnlineGameCard({
+    required this.serviceConfigured,
+    required this.onlineStatus,
+    required this.team,
+    required this.onChooseTeam,
+  });
+
+  final bool serviceConfigured;
+  final String? onlineStatus;
+  final RueDexTeam? team;
+  final VoidCallback onChooseTeam;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(serviceConfigured ? Icons.cloud_done : Icons.cloud_off),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'Saison en ligne',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+                if (team != null) CircleAvatar(radius: 10, backgroundColor: team!.color),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(onlineStatus ?? 'Chargement du serveur…'),
+            if (serviceConfigured && team == null) ...[
+              const SizedBox(height: 12),
+              FilledButton.tonalIcon(
+                onPressed: onChooseTeam,
+                icon: const Icon(Icons.groups),
+                label: const Text('Choisir mon équipe'),
+              ),
+            ],
           ],
         ),
       ),

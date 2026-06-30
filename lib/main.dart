@@ -1,13 +1,24 @@
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
+import 'config/app_config.dart';
 import 'models/street_database.dart';
 import 'screens/home_screen.dart';
 import 'services/app_settings_store.dart';
 import 'services/discovery_store.dart';
+import 'services/online_game_service.dart';
 import 'services/street_repository.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  if (AppConfig.supabaseConfigured) {
+    await Supabase.initialize(
+      url: AppConfig.supabaseUrl,
+      anonKey: AppConfig.supabaseAnonKey,
+    );
+  }
+
   final database = await StreetRepository().loadDatabase();
 
   runApp(
@@ -15,6 +26,7 @@ Future<void> main() async {
       database: database,
       discoveryStore: DiscoveryStore(),
       settingsStore: AppSettingsStore(),
+      onlineGameService: OnlineGameService(),
     ),
   );
 }
@@ -24,12 +36,14 @@ class RueDexApp extends StatelessWidget {
     required this.database,
     required this.discoveryStore,
     required this.settingsStore,
+    required this.onlineGameService,
     super.key,
   });
 
   final StreetDatabase database;
   final DiscoveryStore discoveryStore;
   final AppSettingsStore settingsStore;
+  final OnlineGameService onlineGameService;
 
   @override
   Widget build(BuildContext context) {
@@ -49,6 +63,7 @@ class RueDexApp extends StatelessWidget {
         database: database,
         discoveryStore: discoveryStore,
         settingsStore: settingsStore,
+        onlineGameService: onlineGameService,
       ),
     );
   }
