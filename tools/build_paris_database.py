@@ -9,6 +9,7 @@ conservé, lorsqu'il est présent.
 from __future__ import annotations
 
 import argparse
+import gzip
 import json
 import math
 import re
@@ -192,8 +193,11 @@ def convert_paths(paths: list[list[list[float]]]) -> list[list[list[float]]]:
 
 
 def load_json(path: Path) -> Any:
-    with path.open("r", encoding="utf-8") as handle:
-        return json.load(handle)
+    """Charge un export JSON, même si le serveur l'a renvoyé compressé en gzip."""
+    raw = path.read_bytes()
+    if raw.startswith(b"\x1f\x8b"):
+        raw = gzip.decompress(raw)
+    return json.loads(raw.decode("utf-8"))
 
 
 def main() -> None:

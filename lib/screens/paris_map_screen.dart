@@ -109,7 +109,9 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
         });
       },
       onError: (Object error) {
-        if (mounted) setState(() => _status = 'Synchronisation personnelle coupée');
+        if (mounted) {
+          setState(() => _status = 'Synchronisation personnelle coupée');
+        }
       },
     );
   }
@@ -144,7 +146,9 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
         });
       },
       onError: (Object error) {
-        if (mounted) setState(() => _status = 'Synchronisation conquête coupée');
+        if (mounted) {
+          setState(() => _status = 'Synchronisation conquête coupée');
+        }
       },
     );
   }

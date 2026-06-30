@@ -257,11 +257,11 @@ class OnlineGameService {
     yield* client
         .from('personal_discoveries')
         .stream(primaryKey: ['season_id', 'player_id', 'street_id'])
-        .eq('season_id', resolvedSeasonId)
-        .eq('player_id', user.id)
         .map(
           (rows) => {
-            for (final row in rows) row['street_id'] as String,
+            for (final row in rows)
+              if (row['season_id'] == resolvedSeasonId && row['player_id'] == user.id)
+                row['street_id'] as String,
           },
         );
   }
@@ -298,11 +298,11 @@ class OnlineGameService {
     yield* client
         .from('street_ownership')
         .stream(primaryKey: ['season_id', 'street_id'])
-        .eq('season_id', resolvedSeasonId)
         .map(
           (rows) => {
             for (final row in rows)
-              row['street_id'] as String: row['team_id'] as String,
+              if (row['season_id'] == resolvedSeasonId)
+                row['street_id'] as String: row['team_id'] as String,
           },
         );
   }
