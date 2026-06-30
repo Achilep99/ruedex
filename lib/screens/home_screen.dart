@@ -5,8 +5,10 @@ import '../models/street_database.dart';
 import '../services/app_settings_store.dart';
 import '../services/discovery_store.dart';
 import '../services/online_game_service.dart';
+import 'auth_screen.dart';
 import 'paris_map_screen.dart';
 import 'pokedex_screen.dart';
+import 'profile_screen.dart';
 import 'scanner_screen.dart';
 import 'team_choice_screen.dart';
 
@@ -31,6 +33,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   Set<String> _discoveredIds = const {};
   OnlinePlayerProfile? _onlineProfile;
+  RueDexClan? _clan;
   String? _onlineStatus;
   bool _developerMode = false;
   bool _loading = true;
@@ -42,18 +45,27 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _reload() async {
-    final ids = await widget.discoveryStore.loadDiscoveredIds();
+    final localIds = await widget.discoveryStore.loadDiscoveredIds();
     final developerMode = await widget.settingsStore.loadDeveloperMode();
     OnlinePlayerProfile? profile;
+    RueDexClan? clan;
     String? onlineStatus;
+    Set<String> discoveredIds = localIds;
 
     if (widget.onlineGameService.isConfigured) {
       try {
-        profile = await widget.onlineGameService.ensureReady();
-        final team = widget.onlineGameService.teamById(profile?.teamId);
-        onlineStatus = team == null
-            ? 'Serveur connecté · aucune équipe choisie'
-            : 'Serveur connecté · équipe ${team.label}';
+        profile = await widget.onlineGameService.currentProfile();
+        if (profile == null) {
+          onlineStatus = 'Connecte-toi pour jouer en ligne';
+        } else {
+          final onlineIds = await widget.onlineGameService.loadPersonalDiscoveries();
+          if (onlineIds.isNotEmpty) discoveredIds = onlineIds;
+          clan = await widget.onlineGameService.loadMyClan();
+          final team = widget.onlineGameService.teamById(profile.teamId);
+          onlineStatus = team == null
+              ? 'Compte connecté · aucune équipe choisie'
+              : 'Compte connecté · équipe ${team.label}';
+        }
       } catch (error) {
         onlineStatus = 'Serveur configuré mais inaccessible : $error';
       }
@@ -63,15 +75,29 @@ class _HomeScreenState extends State<HomeScreen> {
 
     if (!mounted) return;
     setState(() {
-      _discoveredIds = ids;
+      _discoveredIds = discoveredIds;
       _developerMode = developerMode;
       _onlineProfile = profile;
+      _clan = clan;
       _onlineStatus = onlineStatus;
       _loading = false;
     });
   }
 
   Future<void> _openScanner() async {
+    if (widget.onlineGameService.isConfigured) {
+      final profile = await widget.onlineGameService.currentProfile();
+      if (!mounted) return;
+      if (profile == null) {
+        await _openAuth();
+        return;
+      }
+      if (!profile.hasTeam) {
+        await _chooseTeam();
+        return;
+      }
+    }
+
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => ScannerScreen(
@@ -98,14 +124,47 @@ class _HomeScreenState extends State<HomeScreen> {
     await _reload();
   }
 
-  Future<void> _openMap() async {
+  Future<void> _openPersonalMap() async {
     await Navigator.of(context).push<void>(
       MaterialPageRoute(
         builder: (_) => ParisMapScreen(
           database: widget.database,
           discoveryStore: widget.discoveryStore,
           onlineGameService: widget.onlineGameService,
+          mode: ParisMapMode.personal,
         ),
+      ),
+    );
+    await _reload();
+  }
+
+  Future<void> _openConquestMap() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ParisMapScreen(
+          database: widget.database,
+          discoveryStore: widget.discoveryStore,
+          onlineGameService: widget.onlineGameService,
+          mode: ParisMapMode.conquest,
+        ),
+      ),
+    );
+    await _reload();
+  }
+
+  Future<void> _openAuth() async {
+    await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => AuthScreen(onlineGameService: widget.onlineGameService),
+      ),
+    );
+    await _reload();
+  }
+
+  Future<void> _openProfile() async {
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(onlineGameService: widget.onlineGameService),
       ),
     );
     await _reload();
@@ -178,6 +237,11 @@ class _HomeScreenState extends State<HomeScreen> {
               )
             : const Text('RueDex'),
         actions: [
+          IconButton(
+            tooltip: 'Profil',
+            onPressed: _openProfile,
+            icon: const Icon(Icons.person_outline),
+          ),
           if (AppConfig.developerToolsAvailable && _developerMode)
             IconButton(
               tooltip: 'Réglages développeur',
@@ -187,94 +251,110 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       ),
       body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(20),
-          children: [
-            Text(
-              'Paris devient ton terrain de chasse.',
-              style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'Cadre une plaque : le scan, le GPS et la validation travaillent automatiquement.',
-            ),
-            const SizedBox(height: 22),
-            Card(
-              child: Padding(
-                padding: const EdgeInsets.all(20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      children: [
-                        const Icon(Icons.route),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Text(
-                            _loading ? 'Chargement…' : '$count / $total rues découvertes',
-                            style: Theme.of(context).textTheme.titleLarge,
+        child: RefreshIndicator(
+          onRefresh: _reload,
+          child: ListView(
+            padding: const EdgeInsets.all(20),
+            children: [
+              Text(
+                'Paris devient ton terrain de conquête.',
+                style: Theme.of(context).textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Scanne les plaques pour remplir ta collection et recolorer la carte de saison pour ton équipe.',
+              ),
+              const SizedBox(height: 22),
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.route),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Text(
+                              _loading ? 'Chargement…' : '$count / $total rues dans ta collection',
+                              style: Theme.of(context).textTheme.titleLarge,
+                            ),
                           ),
-                        ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      LinearProgressIndicator(value: _loading ? null : progress),
+                      if (_developerMode) ...[
+                        const SizedBox(height: 10),
+                        const Text('Mode développeur actif', style: TextStyle(fontWeight: FontWeight.w800)),
                       ],
-                    ),
-                    const SizedBox(height: 16),
-                    LinearProgressIndicator(value: _loading ? null : progress),
-                    if (_developerMode) ...[
-                      const SizedBox(height: 10),
-                      const Text('Mode développeur actif', style: TextStyle(fontWeight: FontWeight.w800)),
                     ],
-                  ],
-                ),
-              ),
-            ),
-            const SizedBox(height: 12),
-            _OnlineGameCard(
-              serviceConfigured: widget.onlineGameService.isConfigured,
-              onlineStatus: _onlineStatus,
-              team: team,
-              onChooseTeam: _chooseTeam,
-            ),
-            const SizedBox(height: 18),
-            FilledButton.icon(
-              onPressed: _openScanner,
-              icon: const Icon(Icons.center_focus_strong),
-              label: const Padding(
-                padding: EdgeInsets.symmetric(vertical: 17),
-                child: Text('Lancer le scanner direct'),
-              ),
-            ),
-            const SizedBox(height: 12),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _openMap,
-                    icon: const Icon(Icons.map_outlined),
-                    label: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      child: Text('Ma carte'),
-                    ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: OutlinedButton.icon(
-                    onPressed: _openPokedex,
-                    icon: const Icon(Icons.grid_view_rounded),
-                    label: const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 14),
-                      child: Text('RueDex'),
+              ),
+              const SizedBox(height: 12),
+              _OnlineGameCard(
+                serviceConfigured: widget.onlineGameService.isConfigured,
+                onlineStatus: _onlineStatus,
+                profile: _onlineProfile,
+                clan: _clan,
+                team: team,
+                onAuth: _openAuth,
+                onChooseTeam: _chooseTeam,
+                onProfile: _openProfile,
+              ),
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: _openScanner,
+                icon: const Icon(Icons.center_focus_strong),
+                label: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 17),
+                  child: Text('Lancer le scanner direct'),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _openPersonalMap,
+                      icon: const Icon(Icons.map_outlined),
+                      label: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 14),
+                        child: Text('Ma carte'),
+                      ),
                     ),
                   ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: _openConquestMap,
+                      icon: const Icon(Icons.public),
+                      label: const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 14),
+                        child: Text('Conquête'),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: _openPokedex,
+                icon: const Icon(Icons.grid_view_rounded),
+                label: const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 14),
+                  child: Text('RueDex'),
                 ),
-              ],
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'Données géographiques : ${widget.database.sourceLabel}',
-              style: Theme.of(context).textTheme.bodySmall,
-            ),
-          ],
+              ),
+              const SizedBox(height: 24),
+              Text(
+                'Données géographiques : ${widget.database.sourceLabel}',
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -285,14 +365,22 @@ class _OnlineGameCard extends StatelessWidget {
   const _OnlineGameCard({
     required this.serviceConfigured,
     required this.onlineStatus,
+    required this.profile,
+    required this.clan,
     required this.team,
+    required this.onAuth,
     required this.onChooseTeam,
+    required this.onProfile,
   });
 
   final bool serviceConfigured;
   final String? onlineStatus;
+  final OnlinePlayerProfile? profile;
+  final RueDexClan? clan;
   final RueDexTeam? team;
+  final VoidCallback onAuth;
   final VoidCallback onChooseTeam;
+  final VoidCallback onProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -317,14 +405,36 @@ class _OnlineGameCard extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(onlineStatus ?? 'Chargement du serveur…'),
-            if (serviceConfigured && team == null) ...[
-              const SizedBox(height: 12),
-              FilledButton.tonalIcon(
-                onPressed: onChooseTeam,
-                icon: const Icon(Icons.groups),
-                label: const Text('Choisir mon équipe'),
-              ),
+            if (profile != null) ...[
+              const SizedBox(height: 8),
+              Text('Profil : ${profile!.pseudo}'),
+              Text(clan == null ? 'Clan : aucun' : 'Clan : ${clan!.name} [${clan!.tag}]'),
             ],
+            const SizedBox(height: 12),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                if (serviceConfigured && profile == null)
+                  FilledButton.tonalIcon(
+                    onPressed: onAuth,
+                    icon: const Icon(Icons.login),
+                    label: const Text('Créer / connexion'),
+                  ),
+                if (serviceConfigured && profile != null && team == null)
+                  FilledButton.tonalIcon(
+                    onPressed: onChooseTeam,
+                    icon: const Icon(Icons.groups),
+                    label: const Text('Choisir mon équipe'),
+                  ),
+                if (serviceConfigured && profile != null)
+                  OutlinedButton.icon(
+                    onPressed: onProfile,
+                    icon: const Icon(Icons.person_outline),
+                    label: const Text('Profil / clan'),
+                  ),
+              ],
+            ),
           ],
         ),
       ),

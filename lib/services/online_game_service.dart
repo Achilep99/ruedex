@@ -22,14 +22,36 @@ class OnlinePlayerProfile {
   const OnlinePlayerProfile({
     required this.userId,
     required this.pseudo,
+    required this.email,
     required this.teamId,
+    required this.clanId,
   });
 
   final String userId;
   final String pseudo;
+  final String? email;
   final String? teamId;
+  final String? clanId;
 
   bool get hasTeam => teamId != null && teamId!.isNotEmpty;
+}
+
+class RueDexClan {
+  const RueDexClan({
+    required this.id,
+    required this.name,
+    required this.tag,
+    required this.teamId,
+    required this.role,
+    required this.memberCount,
+  });
+
+  final String id;
+  final String name;
+  final String tag;
+  final String teamId;
+  final String role;
+  final int memberCount;
 }
 
 class CaptureResult {
@@ -71,27 +93,88 @@ class OnlineGameService {
 
   Color? colorForTeam(String? id) => teamById(id)?.color;
 
-  Future<OnlinePlayerProfile?> ensureReady() async {
+  User? get currentUser => _client?.auth.currentUser;
+
+  Future<OnlinePlayerProfile?> currentProfile() async {
     final client = _client;
-    if (client == null) return null;
+    final user = client?.auth.currentUser;
+    if (client == null || user == null) return null;
+    return _loadOrCreateProfile(user);
+  }
 
-    var session = client.auth.currentSession;
-    if (session == null) {
-      final response = await client.auth.signInAnonymously();
-      session = response.session;
+  Future<OnlinePlayerProfile?> refreshProfile() => currentProfile();
+
+  Future<OnlinePlayerProfile> signUpWithEmail({
+    required String email,
+    required String password,
+    required String pseudo,
+  }) async {
+    final client = _requireClient();
+    final response = await client.auth.signUp(
+      email: email.trim(),
+      password: password,
+      data: {'pseudo': pseudo.trim()},
+    );
+    final user = response.user ?? client.auth.currentUser;
+    if (user == null || client.auth.currentSession == null) {
+      throw StateError(
+        'Compte créé. Si Supabase demande une confirmation email, valide le mail puis connecte-toi.',
+      );
     }
+    return _loadOrCreateProfile(user, preferredPseudo: pseudo.trim());
+  }
 
-    final user = client.auth.currentUser ?? session?.user;
-    if (user == null) return null;
+  Future<OnlinePlayerProfile> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    final client = _requireClient();
+    final response = await client.auth.signInWithPassword(
+      email: email.trim(),
+      password: password,
+    );
+    final user = response.user ?? client.auth.currentUser;
+    if (user == null) {
+      throw StateError('Connexion impossible.');
+    }
+    return _loadOrCreateProfile(user);
+  }
 
+  Future<void> signOut() async {
+    final client = _client;
+    if (client == null) return;
+    await client.auth.signOut();
+  }
+
+  Future<OnlinePlayerProfile> updatePseudo(String pseudo) async {
+    final client = _requireClient();
+    final user = _requireUser(client);
+    final cleanPseudo = _cleanPseudo(pseudo);
+    await client.from('players').update({
+      'pseudo': cleanPseudo,
+      'updated_at': DateTime.now().toUtc().toIso8601String(),
+    }).eq('id', user.id);
+    return _loadOrCreateProfile(user);
+  }
+
+  Future<OnlinePlayerProfile> _loadOrCreateProfile(
+    User user, {
+    String? preferredPseudo,
+  }) async {
+    final client = _requireClient();
     final existing = await client
         .from('players')
-        .select('id, pseudo, team_id')
+        .select('id, pseudo, team_id, clan_id')
         .eq('id', user.id)
         .maybeSingle();
 
     if (existing == null) {
-      final pseudo = 'Joueur ${user.id.substring(0, 6)}';
+      final pseudo = _cleanPseudo(
+        preferredPseudo ??
+            user.userMetadata?['pseudo']?.toString() ??
+            user.email?.split('@').first ??
+            'Joueur ${user.id.substring(0, 6)}',
+      );
       await client.from('players').insert({
         'id': user.id,
         'pseudo': pseudo,
@@ -99,37 +182,33 @@ class OnlineGameService {
       return OnlinePlayerProfile(
         userId: user.id,
         pseudo: pseudo,
+        email: user.email,
         teamId: null,
+        clanId: null,
       );
     }
 
     return OnlinePlayerProfile(
       userId: existing['id'] as String,
       pseudo: existing['pseudo'] as String? ?? 'Joueur',
+      email: user.email,
       teamId: existing['team_id'] as String?,
+      clanId: existing['clan_id'] as String?,
     );
   }
 
-  Future<OnlinePlayerProfile?> chooseTeam(String teamId) async {
-    final client = _client;
-    if (client == null) return null;
-    final profile = await ensureReady();
-    if (profile == null) return null;
-
-    if (profile.hasTeam && profile.teamId != teamId) {
-      throw StateError('Ton équipe est déjà choisie pour cette saison.');
-    }
-
-    await client
-        .from('players')
-        .update({'team_id': teamId})
-        .eq('id', profile.userId);
-
-    return OnlinePlayerProfile(
-      userId: profile.userId,
-      pseudo: profile.pseudo,
-      teamId: teamId,
+  Future<OnlinePlayerProfile> chooseTeam(String teamId) async {
+    final client = _requireClient();
+    final user = _requireUser(client);
+    final response = await client.rpc(
+      'choose_team',
+      params: {'p_team_id': teamId},
     );
+    final data = response as Map<String, dynamic>;
+    if (data['accepted'] != true) {
+      throw StateError(data['message'] as String? ?? 'Équipe refusée.');
+    }
+    return _loadOrCreateProfile(user);
   }
 
   Future<String?> activeSeasonId() async {
@@ -142,6 +221,49 @@ class OnlineGameService {
         .limit(1)
         .maybeSingle();
     return season?['id'] as String?;
+  }
+
+  Future<Set<String>> loadPersonalDiscoveries({String? seasonId}) async {
+    final client = _client;
+    final user = client?.auth.currentUser;
+    if (client == null || user == null) return const {};
+    final resolvedSeasonId = seasonId ?? await activeSeasonId();
+    if (resolvedSeasonId == null) return const {};
+
+    final rows = await client
+        .from('personal_discoveries')
+        .select('street_id')
+        .eq('season_id', resolvedSeasonId)
+        .eq('player_id', user.id);
+
+    return {
+      for (final row in rows as List<dynamic>) row['street_id'] as String,
+    };
+  }
+
+  Stream<Set<String>> watchPersonalDiscoveries({String? seasonId}) async* {
+    final client = _client;
+    final user = client?.auth.currentUser;
+    if (client == null || user == null) {
+      yield const {};
+      return;
+    }
+    final resolvedSeasonId = seasonId ?? await activeSeasonId();
+    if (resolvedSeasonId == null) {
+      yield const {};
+      return;
+    }
+
+    yield* client
+        .from('personal_discoveries')
+        .stream(primaryKey: ['season_id', 'player_id', 'street_id'])
+        .eq('season_id', resolvedSeasonId)
+        .eq('player_id', user.id)
+        .map(
+          (rows) => {
+            for (final row in rows) row['street_id'] as String,
+          },
+        );
   }
 
   Future<Map<String, String>> loadStreetOwnership({String? seasonId}) async {
@@ -161,6 +283,30 @@ class OnlineGameService {
     };
   }
 
+  Stream<Map<String, String>> watchStreetOwnership({String? seasonId}) async* {
+    final client = _client;
+    if (client == null) {
+      yield const {};
+      return;
+    }
+    final resolvedSeasonId = seasonId ?? await activeSeasonId();
+    if (resolvedSeasonId == null) {
+      yield const {};
+      return;
+    }
+
+    yield* client
+        .from('street_ownership')
+        .stream(primaryKey: ['season_id', 'street_id'])
+        .eq('season_id', resolvedSeasonId)
+        .map(
+          (rows) => {
+            for (final row in rows)
+              row['street_id'] as String: row['team_id'] as String,
+          },
+        );
+  }
+
   Future<CaptureResult> captureStreet({
     required MatchCandidate candidate,
     required double plateScore,
@@ -173,11 +319,11 @@ class OnlineGameService {
       );
     }
 
-    final profile = await ensureReady();
+    final profile = await currentProfile();
     if (profile == null) {
       return const CaptureResult(
         accepted: false,
-        message: 'Connexion joueur impossible.',
+        message: 'Connecte-toi avant de capturer une rue.',
       );
     }
     if (!profile.hasTeam) {
@@ -212,5 +358,99 @@ class OnlineGameService {
       message: data['message'] as String? ?? 'Capture envoyée.',
       teamId: data['team_id'] as String?,
     );
+  }
+
+  Future<RueDexClan?> loadMyClan() async {
+    final client = _client;
+    final user = client?.auth.currentUser;
+    if (client == null || user == null) return null;
+
+    final row = await client
+        .from('clan_members')
+        .select('role, clans(id, name, tag, team_id)')
+        .eq('player_id', user.id)
+        .maybeSingle();
+    if (row == null) return null;
+
+    final clan = row['clans'] as Map<String, dynamic>?;
+    if (clan == null) return null;
+    final count = await _clanMemberCount(clan['id'] as String);
+    return RueDexClan(
+      id: clan['id'] as String,
+      name: clan['name'] as String,
+      tag: clan['tag'] as String,
+      teamId: clan['team_id'] as String,
+      role: row['role'] as String? ?? 'member',
+      memberCount: count,
+    );
+  }
+
+  Future<RueDexClan> createClan({
+    required String name,
+    required String tag,
+  }) async {
+    final client = _requireClient();
+    final response = await client.rpc(
+      'create_clan',
+      params: {'p_name': name.trim(), 'p_tag': tag.trim()},
+    );
+    final data = response as Map<String, dynamic>;
+    if (data['accepted'] != true) {
+      throw StateError(data['message'] as String? ?? 'Clan refusé.');
+    }
+    final clan = await loadMyClan();
+    if (clan == null) throw StateError('Clan créé mais introuvable.');
+    return clan;
+  }
+
+  Future<RueDexClan> joinClan(String tag) async {
+    final client = _requireClient();
+    final response = await client.rpc(
+      'join_clan',
+      params: {'p_tag': tag.trim()},
+    );
+    final data = response as Map<String, dynamic>;
+    if (data['accepted'] != true) {
+      throw StateError(data['message'] as String? ?? 'Clan refusé.');
+    }
+    final clan = await loadMyClan();
+    if (clan == null) throw StateError('Clan rejoint mais introuvable.');
+    return clan;
+  }
+
+  Future<void> leaveClan() async {
+    final client = _requireClient();
+    final response = await client.rpc('leave_clan');
+    final data = response as Map<String, dynamic>;
+    if (data['accepted'] != true) {
+      throw StateError(data['message'] as String? ?? 'Départ impossible.');
+    }
+  }
+
+  Future<int> _clanMemberCount(String clanId) async {
+    final client = _requireClient();
+    final rows = await client
+        .from('clan_members')
+        .select('player_id')
+        .eq('clan_id', clanId);
+    return (rows as List<dynamic>).length;
+  }
+
+  SupabaseClient _requireClient() {
+    final client = _client;
+    if (client == null) throw StateError('Supabase n’est pas configuré.');
+    return client;
+  }
+
+  User _requireUser(SupabaseClient client) {
+    final user = client.auth.currentUser;
+    if (user == null) throw StateError('Connecte-toi d’abord.');
+    return user;
+  }
+
+  String _cleanPseudo(String value) {
+    final cleaned = value.trim().replaceAll(RegExp(r'\s+'), ' ');
+    if (cleaned.length < 3) return 'Joueur';
+    return cleaned.length > 24 ? cleaned.substring(0, 24) : cleaned;
   }
 }

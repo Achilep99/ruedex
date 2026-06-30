@@ -1,4 +1,4 @@
-name: Construire APK RueDex V3
+name: Construire APK RueDex V4
 
 on:
   workflow_dispatch:
@@ -77,13 +77,13 @@ jobs:
           mkdir -p artifacts
           flutter build apk --debug             --dart-define=RUEDEX_DEV_TOOLS=true             --dart-define=SUPABASE_URL=$SUPABASE_URL             --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
           cp build/app/outputs/flutter-apk/app-debug.apk artifacts/RueDex-developpeur.apk
-          flutter build apk --release             --dart-define=RUEDEX_DEV_TOOLS=false             --dart-define=SUPABASE_URL=$SUPABASE_URL             --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
+          flutter build apk --release --no-shrink             --dart-define=RUEDEX_DEV_TOOLS=false             --dart-define=SUPABASE_URL=$SUPABASE_URL             --dart-define=SUPABASE_ANON_KEY=$SUPABASE_ANON_KEY
           cp build/app/outputs/flutter-apk/app-release.apk artifacts/RueDex-utilisateur.apk
 
       - name: Publier les APK téléchargeables
         uses: actions/upload-artifact@v4
         with:
-          name: RueDex-V3-APK
+          name: RueDex-V4-APK
           path: artifacts/*.apk
           if-no-files-found: error
           retention-days: 14

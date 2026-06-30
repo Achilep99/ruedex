@@ -61,3 +61,8 @@ RueDex n'essaie pas de deviner une personne depuis le seul nom OCR. La descripti
 ## Données et licence
 
 Données géographiques et historiques : Ville de Paris — Paris Data — ODbL. Le code de l'application reste séparé de la base dérivée.
+
+
+## V4
+
+La V4 ajoute les comptes email/mot de passe, les équipes, les clans, la carte personnelle et la carte de conquête synchronisée Supabase. Avant de compiler, lance `supabase/schema_ruedex.sql` dans Supabase.
