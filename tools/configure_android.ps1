@@ -80,9 +80,9 @@ function Force-NoReleaseShrinkKts($gradleContent) {
         if ($gradleContent -match 'release\s*\{') {
             $gradleContent = $gradleContent -replace 'release\s*\{', "release {`r`n            isMinifyEnabled = false`r`n            isShrinkResources = false"
         } elseif ($gradleContent -match 'buildTypes\s*\{') {
-            $gradleContent = $gradleContent -replace 'buildTypes\s*\{', "buildTypes {`r`n        release {`r`n            isMinifyEnabled = false`r`n            isShrinkResources = false`r`n            signingConfig = signingConfigs.getByName(\"debug\")`r`n        }"
+            $gradleContent = $gradleContent -replace 'buildTypes\s*\{', "buildTypes {`r`n        release {`r`n            isMinifyEnabled = false`r`n            isShrinkResources = false`r`n            signingConfig = signingConfigs.getByName(`"debug`")`r`n        }"
         } else {
-            $gradleContent = $gradleContent -replace '(?s)(android\s*\{.*?defaultConfig\s*\{.*?\n\s*\})', "`$1`r`n`r`n    buildTypes {`r`n        release {`r`n            isMinifyEnabled = false`r`n            isShrinkResources = false`r`n            signingConfig = signingConfigs.getByName(\"debug\")`r`n        }`r`n    }"
+            $gradleContent = $gradleContent -replace '(?s)(android\s*\{.*?defaultConfig\s*\{.*?\n\s*\})', "`$1`r`n`r`n    buildTypes {`r`n        release {`r`n            isMinifyEnabled = false`r`n            isShrinkResources = false`r`n            signingConfig = signingConfigs.getByName(`"debug`")`r`n        }`r`n    }"
         }
     }
 
