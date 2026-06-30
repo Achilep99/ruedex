@@ -1,4 +1,4 @@
-name: Construire APK RueDex V4
+name: Construire APK RueDex V4.2
 
 on:
   workflow_dispatch:
@@ -83,7 +83,7 @@ jobs:
       - name: Publier les APK téléchargeables
         uses: actions/upload-artifact@v4
         with:
-          name: RueDex-V4-APK
+          name: RueDex-V4-2-APK
           path: artifacts/*.apk
           if-no-files-found: error
           retention-days: 14

@@ -1,11 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../models/street_database.dart';
+import '../models/street_entry.dart';
 import '../services/discovery_store.dart';
 import '../services/online_game_service.dart';
 import '../widgets/paris_street_map.dart';
+import '../widgets/rarity_badge.dart';
 
 enum ParisMapMode { personal, conquest }
 
@@ -32,6 +35,8 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
   StreamSubscription<Map<String, String>>? _ownershipSubscription;
   Set<String> _discoveredIds = const {};
   Map<String, String> _onlineOwnership = const {};
+  Set<String> _visibleTeamIds = const {'red', 'blue', 'green', 'yellow'};
+  bool _showUnownedStreets = true;
   String? _status;
 
   bool get _isConquest => widget.mode == ParisMapMode.conquest;
@@ -65,6 +70,7 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
 
     if (_isConquest) {
       await _loadConquest();
+      _watchPersonal();
       _watchConquest();
     } else {
       await _loadPersonal();
@@ -73,18 +79,20 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
   }
 
   Future<void> _loadPersonal() async {
-    final localIds = await widget.discoveryStore.loadDiscoveredIds();
-    Set<String> ids = localIds;
+    Set<String> ids = const {};
     String status = 'Carte personnelle locale';
     if (widget.onlineGameService.isConfigured &&
         widget.onlineGameService.currentUser != null) {
       try {
-        final onlineIds = await widget.onlineGameService.loadPersonalDiscoveries();
-        ids = {...localIds, ...onlineIds};
+        ids = await widget.onlineGameService.loadPersonalDiscoveries();
         status = 'Carte personnelle synchronisée';
       } catch (error) {
-        status = 'Carte personnelle locale · serveur inaccessible';
+        status = 'Carte personnelle inaccessible : $error';
       }
+    } else if (!widget.onlineGameService.isConfigured) {
+      ids = await widget.discoveryStore.loadDiscoveredIds();
+    } else {
+      status = 'Connecte-toi pour voir ta carte personnelle';
     }
     if (!mounted) return;
     setState(() {
@@ -100,12 +108,13 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
       return;
     }
     _personalSubscription = widget.onlineGameService.watchPersonalDiscoveries().listen(
-      (ids) async {
-        final localIds = await widget.discoveryStore.loadDiscoveredIds();
+      (ids) {
         if (!mounted) return;
         setState(() {
-          _discoveredIds = {...localIds, ...ids};
-          _status = 'Carte personnelle synchronisée en direct';
+          _discoveredIds = ids;
+          _status = _isConquest
+              ? 'Conquête synchronisée · collection chargée'
+              : 'Carte personnelle synchronisée en direct';
         });
       },
       onError: (Object error) {
@@ -118,10 +127,14 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
 
   Future<void> _loadConquest() async {
     Map<String, String> ownership = const {};
+    Set<String> personalIds = const {};
     String status = 'Carte de conquête locale';
     if (widget.onlineGameService.isConfigured) {
       try {
         ownership = await widget.onlineGameService.loadStreetOwnership();
+        if (widget.onlineGameService.currentUser != null) {
+          personalIds = await widget.onlineGameService.loadPersonalDiscoveries();
+        }
         status = 'Conquête synchronisée';
       } catch (error) {
         status = 'Conquête inaccessible : $error';
@@ -129,7 +142,7 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
     }
     if (!mounted) return;
     setState(() {
-      _discoveredIds = const {};
+      _discoveredIds = personalIds;
       _onlineOwnership = ownership;
       _status = status;
     });
@@ -153,20 +166,83 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
     );
   }
 
+  Future<void> _showStreetDetails(StreetEntry street) async {
+    final discovered = _discoveredIds.contains(street.id);
+    final ownerTeam = widget.onlineGameService.teamById(_onlineOwnership[street.id]);
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 28),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              discovered ? street.officialName : 'Rue non découverte',
+              style: Theme.of(context).textTheme.headlineSmall,
+            ),
+            const SizedBox(height: 10),
+            if (_isConquest && ownerTeam != null) ...[
+              Row(
+                children: [
+                  CircleAvatar(radius: 8, backgroundColor: ownerTeam.color),
+                  const SizedBox(width: 8),
+                  Text('Contrôlée par l’équipe ${ownerTeam.label}'),
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+            if (discovered) ...[
+              RarityBadge(rarity: street.rarity),
+              if (street.arrondissement.isNotEmpty) ...[
+                const SizedBox(height: 10),
+                Text(street.arrondissement),
+              ],
+              if (street.hasVerifiedOrigin) ...[
+                const SizedBox(height: 16),
+                Text('Origine officielle', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 6),
+                Text(street.origin),
+              ],
+              const SizedBox(height: 18),
+              FilledButton.icon(
+                onPressed: () => _openRoute(street),
+                icon: const Icon(Icons.directions),
+                label: const Text('Itinéraire'),
+              ),
+            ] else ...[
+              const Text(
+                'Tu peux voir la couleur de conquête, mais le nom et l’itinéraire restent cachés tant que tu ne l’as pas découverte personnellement.',
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openRoute(StreetEntry street) async {
+    final center = street.center;
+    final query = Uri.encodeComponent('${center.latitude},${center.longitude}');
+    final uri = Uri.parse('https://www.google.com/maps/search/?api=1&query=$query');
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+
   @override
   Widget build(BuildContext context) {
     final total = widget.database.streets.length;
     final displayedCount = _isConquest ? _onlineOwnership.length : _discoveredIds.length;
     final title = _isConquest ? 'Carte de conquête' : 'Ma carte de Paris';
     final subtitle = _isConquest
-        ? 'Couleurs des équipes · aucun nom de rue'
-        : 'Ta collection · couleurs de rareté · aucun nom de rue';
+        ? 'Couleurs des équipes · noms visibles seulement si tu as découvert la rue'
+        : 'Ta collection · couleurs de rareté · aucun nom sur la carte';
 
     return Scaffold(
       appBar: AppBar(
         title: Text(title),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(52),
+          preferredSize: Size.fromHeight(_isConquest ? 102 : 52),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
             child: Column(
@@ -174,16 +250,32 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
               children: [
                 Row(
                   children: [
-                    Text(
-                      '$displayedCount / $total rues',
-                      style: Theme.of(context).textTheme.labelLarge,
-                    ),
+                    Text('$displayedCount / $total rues', style: Theme.of(context).textTheme.labelLarge),
                     const Spacer(),
-                    Text(_status ?? 'Chargement…'),
+                    Flexible(child: Text(_status ?? 'Chargement…', textAlign: TextAlign.end)),
                   ],
                 ),
                 const SizedBox(height: 3),
                 Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
+                if (_isConquest) ...[
+                  const SizedBox(height: 8),
+                  _ConquestFilters(
+                    visibleTeamIds: _visibleTeamIds,
+                    showUnownedStreets: _showUnownedStreets,
+                    onTeamChanged: (teamId, enabled) {
+                      setState(() {
+                        final next = {..._visibleTeamIds};
+                        if (enabled) {
+                          next.add(teamId);
+                        } else {
+                          next.remove(teamId);
+                        }
+                        _visibleTeamIds = next;
+                      });
+                    },
+                    onUnownedChanged: (value) => setState(() => _showUnownedStreets = value),
+                  ),
+                ],
               ],
             ),
           ),
@@ -197,8 +289,51 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
           discoveredIds: _isConquest ? const {} : _discoveredIds,
           teamOwnership: _isConquest ? _onlineOwnership : const {},
           teamColorResolver: widget.onlineGameService.colorForTeam,
+          visibleTeamIds: _visibleTeamIds,
+          showUnownedStreets: _isConquest ? _showUnownedStreets : true,
           legendMode: _isConquest ? MapLegendMode.teams : MapLegendMode.rarity,
+          onStreetTap: _showStreetDetails,
         ),
+      ),
+    );
+  }
+}
+
+class _ConquestFilters extends StatelessWidget {
+  const _ConquestFilters({
+    required this.visibleTeamIds,
+    required this.showUnownedStreets,
+    required this.onTeamChanged,
+    required this.onUnownedChanged,
+  });
+
+  final Set<String> visibleTeamIds;
+  final bool showUnownedStreets;
+  final void Function(String teamId, bool enabled) onTeamChanged;
+  final ValueChanged<bool> onUnownedChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: [
+          for (final team in OnlineGameService.teams) ...[
+            FilterChip(
+              selected: visibleTeamIds.contains(team.id),
+              label: Text(team.label),
+              avatar: CircleAvatar(backgroundColor: team.color),
+              onSelected: (value) => onTeamChanged(team.id, value),
+            ),
+            const SizedBox(width: 6),
+          ],
+          FilterChip(
+            selected: showUnownedStreets,
+            label: const Text('Non capturées'),
+            avatar: const CircleAvatar(backgroundColor: Colors.grey),
+            onSelected: onUnownedChanged,
+          ),
+        ],
       ),
     );
   }

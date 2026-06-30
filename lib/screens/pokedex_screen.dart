@@ -2,18 +2,21 @@ import 'package:flutter/material.dart';
 
 import '../models/street_entry.dart';
 import '../services/discovery_store.dart';
+import '../services/online_game_service.dart';
 import '../widgets/rarity_badge.dart';
 
 class PokedexScreen extends StatefulWidget {
   const PokedexScreen({
     required this.streets,
     required this.discoveryStore,
+    required this.onlineGameService,
     required this.developerMode,
     super.key,
   });
 
   final List<StreetEntry> streets;
   final DiscoveryStore discoveryStore;
+  final OnlineGameService onlineGameService;
   final bool developerMode;
 
   @override
@@ -22,6 +25,8 @@ class PokedexScreen extends StatefulWidget {
 
 class _PokedexScreenState extends State<PokedexScreen> {
   Set<String> _discoveredIds = const {};
+  Map<String, DateTime?> _onlineDates = const {};
+  bool _onlineMode = false;
   String _query = '';
 
   @override
@@ -31,17 +36,40 @@ class _PokedexScreenState extends State<PokedexScreen> {
   }
 
   Future<void> _load() async {
+    if (widget.onlineGameService.isConfigured &&
+        widget.onlineGameService.currentUser != null) {
+      final ids = await widget.onlineGameService.loadPersonalDiscoveries();
+      final dates = await widget.onlineGameService.loadPersonalDiscoveryDates();
+      if (mounted) {
+        setState(() {
+          _discoveredIds = ids;
+          _onlineDates = dates;
+          _onlineMode = true;
+        });
+      }
+      return;
+    }
+
     final ids = await widget.discoveryStore.loadDiscoveredIds();
-    if (mounted) setState(() => _discoveredIds = ids);
+    if (mounted) {
+      setState(() {
+        _discoveredIds = ids;
+        _onlineDates = const {};
+        _onlineMode = false;
+      });
+    }
   }
 
   Future<void> _reset() async {
+    if (_onlineMode) return;
     await widget.discoveryStore.clear();
     await _load();
   }
 
   Future<void> _showDetails(StreetEntry street, bool discovered) async {
-    final date = discovered ? await widget.discoveryStore.discoveryDate(street.id) : null;
+    final date = discovered
+        ? (_onlineDates[street.id] ?? await widget.discoveryStore.discoveryDate(street.id))
+        : null;
     if (!mounted) return;
     showModalBottomSheet<void>(
       context: context,
@@ -97,7 +125,7 @@ class _PokedexScreenState extends State<PokedexScreen> {
       appBar: AppBar(
         title: const Text('Mon RueDex'),
         actions: [
-          if (widget.developerMode)
+          if (widget.developerMode && !_onlineMode)
             IconButton(
               tooltip: 'Réinitialiser les découvertes',
               onPressed: _reset,

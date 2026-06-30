@@ -16,7 +16,10 @@ class ParisStreetMap extends StatefulWidget {
     this.selectedPoint,
     this.teamOwnership = const {},
     this.teamColorResolver,
+    this.visibleTeamIds = const {'red', 'blue', 'green', 'yellow'},
+    this.showUnownedStreets = true,
     this.onPointSelected,
+    this.onStreetTap,
     this.showLegend = true,
     this.legendMode = MapLegendMode.rarity,
     super.key,
@@ -28,7 +31,10 @@ class ParisStreetMap extends StatefulWidget {
   final GeoPoint? selectedPoint;
   final Map<String, String> teamOwnership;
   final Color? Function(String? teamId)? teamColorResolver;
+  final Set<String> visibleTeamIds;
+  final bool showUnownedStreets;
   final ValueChanged<GeoPoint>? onPointSelected;
+  final ValueChanged<StreetEntry>? onStreetTap;
   final bool showLegend;
   final MapLegendMode legendMode;
 
@@ -37,29 +43,21 @@ class ParisStreetMap extends StatefulWidget {
 }
 
 class _ParisStreetMapState extends State<ParisStreetMap> {
-  final TransformationController _transformationController =
-      TransformationController();
+  final TransformationController _transformationController = TransformationController();
 
   late _ProjectionDomain _domain;
 
   @override
   void initState() {
     super.initState();
-    _domain = _ProjectionDomain.fromStreets(
-      widget.streets,
-      fallbackBounds: widget.bounds,
-    );
+    _domain = _ProjectionDomain.paris();
   }
 
   @override
   void didUpdateWidget(covariant ParisStreetMap oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (!identical(oldWidget.streets, widget.streets) ||
-        oldWidget.bounds != widget.bounds) {
-      _domain = _ProjectionDomain.fromStreets(
-        widget.streets,
-        fallbackBounds: widget.bounds,
-      );
+    if (oldWidget.bounds != widget.bounds) {
+      _domain = _ProjectionDomain.paris();
       _transformationController.value = Matrix4.identity();
     }
   }
@@ -84,10 +82,7 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
             Positioned.fill(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final viewport = Size(
-                    constraints.maxWidth,
-                    constraints.maxHeight,
-                  );
+                  final viewport = Size(constraints.maxWidth, constraints.maxHeight);
                   final canvasSize = _domain.fittedCanvasSize(viewport);
                   final projection = _MapProjection(_domain, canvasSize);
 
@@ -103,13 +98,22 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
                       child: Center(
                         child: GestureDetector(
                           behavior: HitTestBehavior.opaque,
-                          onTapUp: widget.onPointSelected == null
-                              ? null
-                              : (details) {
-                                  widget.onPointSelected!(
-                                    projection.toGeo(details.localPosition),
+                          onTapUp: (details) {
+                            final street = widget.onStreetTap == null
+                                ? null
+                                : _nearestVisibleStreet(
+                                    details.localPosition,
+                                    projection,
+                                    maxDistancePx: 22,
                                   );
-                                },
+                            if (street != null) {
+                              widget.onStreetTap!(street);
+                              return;
+                            }
+                            if (widget.onPointSelected != null) {
+                              widget.onPointSelected!(projection.toGeo(details.localPosition));
+                            }
+                          },
                           child: CustomPaint(
                             size: canvasSize,
                             painter: _ParisStreetPainter(
@@ -119,6 +123,8 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
                               selectedPoint: widget.selectedPoint,
                               teamOwnership: widget.teamOwnership,
                               teamColorResolver: widget.teamColorResolver,
+                              visibleTeamIds: widget.visibleTeamIds,
+                              showUnownedStreets: widget.showUnownedStreets,
                             ),
                           ),
                         ),
@@ -155,6 +161,41 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
       ),
     );
   }
+
+  StreetEntry? _nearestVisibleStreet(
+    Offset tap,
+    _MapProjection projection, {
+    required double maxDistancePx,
+  }) {
+    StreetEntry? best;
+    var bestDistance = maxDistancePx;
+
+    for (final street in widget.streets) {
+      if (!_streetIsVisible(street)) continue;
+      for (final segment in street.segments) {
+        if (segment.length < 2) continue;
+        for (var index = 0; index < segment.length - 1; index++) {
+          final a = projection.toOffset(segment[index]);
+          final b = projection.toOffset(segment[index + 1]);
+          final distance = _distanceToSegment(tap, a, b);
+          if (distance < bestDistance) {
+            bestDistance = distance;
+            best = street;
+          }
+        }
+      }
+    }
+
+    return best;
+  }
+
+  bool _streetIsVisible(StreetEntry street) {
+    final teamId = widget.teamOwnership[street.id];
+    if (teamId != null) return widget.visibleTeamIds.contains(teamId);
+    if (widget.teamOwnership.isNotEmpty) return widget.showUnownedStreets;
+    if (widget.discoveredIds.contains(street.id)) return true;
+    return widget.showUnownedStreets;
+  }
 }
 
 class _ProjectionDomain {
@@ -172,71 +213,37 @@ class _ProjectionDomain {
 
   double get projectedWidth => math.max(0.000001, maxX - minX);
   double get projectedHeight => math.max(0.000001, maxY - minY);
-  double get aspectRatio => (projectedWidth / projectedHeight).clamp(0.55, 2.10).toDouble();
+
+  double get aspectRatio => projectedWidth / projectedHeight;
+
+  factory _ProjectionDomain.paris() {
+    const southWest = GeoPoint(48.805, 2.205);
+    const northEast = GeoPoint(48.915, 2.490);
+    final a = _projectLocalMeters(southWest);
+    final b = _projectLocalMeters(northEast);
+    return _ProjectionDomain(
+      minX: math.min(a.dx, b.dx),
+      maxX: math.max(a.dx, b.dx),
+      minY: math.min(a.dy, b.dy),
+      maxY: math.max(a.dy, b.dy),
+    );
+  }
 
   Size fittedCanvasSize(Size viewport) {
     if (viewport.width <= 0 || viewport.height <= 0) return const Size(1, 1);
 
     final ratio = aspectRatio;
-    final widthIfFullHeight = viewport.height * ratio;
-    if (widthIfFullHeight <= viewport.width) {
-      return Size(widthIfFullHeight, viewport.height);
+    final heightFromWidth = viewport.width / ratio;
+    if (heightFromWidth <= viewport.height) {
+      return Size(viewport.width, heightFromWidth);
     }
-    return Size(viewport.width, viewport.width / ratio);
-  }
-
-  factory _ProjectionDomain.fromStreets(
-    List<StreetEntry> streets, {
-    required GeoBounds fallbackBounds,
-  }) {
-    final projectedPoints = <Offset>[];
-
-    for (final street in streets) {
-      for (final segment in street.segments) {
-        for (final rawPoint in segment) {
-          final point = _normaliseParisPoint(rawPoint);
-          if (_isPlausibleParisPoint(point)) {
-            projectedPoints.add(_projectLocalMeters(point));
-          }
-        }
-      }
-    }
-
-    if (projectedPoints.length < 2) {
-      projectedPoints.addAll([
-        _projectLocalMeters(
-          GeoPoint(fallbackBounds.minLatitude, fallbackBounds.minLongitude),
-        ),
-        _projectLocalMeters(
-          GeoPoint(fallbackBounds.maxLatitude, fallbackBounds.maxLongitude),
-        ),
-      ]);
-    }
-
-    projectedPoints.sort((a, b) => a.dx.compareTo(b.dx));
-    final minX = _percentile(projectedPoints.map((point) => point.dx), 0.002);
-    final maxX = _percentile(projectedPoints.map((point) => point.dx), 0.998);
-    projectedPoints.sort((a, b) => a.dy.compareTo(b.dy));
-    final minY = _percentile(projectedPoints.map((point) => point.dy), 0.002);
-    final maxY = _percentile(projectedPoints.map((point) => point.dy), 0.998);
-
-    final width = math.max(1.0, maxX - minX);
-    final height = math.max(1.0, maxY - minY);
-    final xPadding = width * 0.04;
-    final yPadding = height * 0.04;
-
-    return _ProjectionDomain(
-      minX: minX - xPadding,
-      maxX: maxX + xPadding,
-      minY: minY - yPadding,
-      maxY: maxY + yPadding,
-    );
+    return Size(viewport.height * ratio, viewport.height);
   }
 }
 
 class _MapProjection {
   _MapProjection(this.domain, this.size) {
-    const padding = 14.0;
+    const padding = 18.0;
     final availableWidth = math.max(1.0, size.width - padding * 2);
     final availableHeight = math.max(1.0, size.height - padding * 2);
 
@@ -289,13 +296,6 @@ GeoPoint _normaliseParisPoint(GeoPoint point) {
   return point;
 }
 
-bool _isPlausibleParisPoint(GeoPoint point) {
-  return point.latitude >= 48.75 &&
-      point.latitude <= 48.95 &&
-      point.longitude >= 2.15 &&
-      point.longitude <= 2.55;
-}
-
 Offset _projectLocalMeters(GeoPoint point) {
   const originLat = 48.8566;
   const originLon = 2.3522;
@@ -318,12 +318,14 @@ GeoPoint _unprojectLocalMeters(Offset projected) {
   return GeoPoint(latitude, longitude);
 }
 
-double _percentile(Iterable<double> values, double fraction) {
-  final list = values.where((value) => value.isFinite).toList()..sort();
-  if (list.isEmpty) return 0;
-  final rawIndex = ((list.length - 1) * fraction).round();
-  final index = rawIndex.clamp(0, list.length - 1).toInt();
-  return list[index];
+double _distanceToSegment(Offset point, Offset a, Offset b) {
+  final ab = b - a;
+  final ap = point - a;
+  final abLengthSquared = ab.dx * ab.dx + ab.dy * ab.dy;
+  if (abLengthSquared <= 0) return (point - a).distance;
+  final t = ((ap.dx * ab.dx + ap.dy * ab.dy) / abLengthSquared).clamp(0.0, 1.0);
+  final closest = Offset(a.dx + ab.dx * t, a.dy + ab.dy * t);
+  return (point - closest).distance;
 }
 
 class _ParisStreetPainter extends CustomPainter {
@@ -334,6 +336,8 @@ class _ParisStreetPainter extends CustomPainter {
     required this.selectedPoint,
     required this.teamOwnership,
     required this.teamColorResolver,
+    required this.visibleTeamIds,
+    required this.showUnownedStreets,
   });
 
   final List<StreetEntry> streets;
@@ -342,6 +346,8 @@ class _ParisStreetPainter extends CustomPainter {
   final GeoPoint? selectedPoint;
   final Map<String, String> teamOwnership;
   final Color? Function(String? teamId)? teamColorResolver;
+  final Set<String> visibleTeamIds;
+  final bool showUnownedStreets;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -358,6 +364,11 @@ class _ParisStreetPainter extends CustomPainter {
 
     for (final street in streets) {
       final teamId = teamOwnership[street.id];
+      if (teamId != null && !visibleTeamIds.contains(teamId)) continue;
+      if (teamId == null && !showUnownedStreets && !discoveredIds.contains(street.id)) {
+        continue;
+      }
+
       final Path target;
       if (teamId != null) {
         target = teamPaths.putIfAbsent(teamId, () => Path());
@@ -381,9 +392,9 @@ class _ParisStreetPainter extends CustomPainter {
     canvas.drawPath(
       undiscoveredPath,
       Paint()
-        ..color = const Color(0xFFB8C0CA).withValues(alpha: 0.42)
+        ..color = const Color(0xFFB8C0CA).withValues(alpha: 0.24)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.75
+        ..strokeWidth = 0.55
         ..strokeCap = StrokeCap.round,
     );
 
@@ -405,7 +416,7 @@ class _ParisStreetPainter extends CustomPainter {
         Paint()
           ..color = color
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.8
+          ..strokeWidth = 3.0
           ..strokeCap = StrokeCap.round,
       );
     }
@@ -424,7 +435,9 @@ class _ParisStreetPainter extends CustomPainter {
         oldDelegate.teamOwnership != teamOwnership ||
         oldDelegate.selectedPoint != selectedPoint ||
         oldDelegate.streets != streets ||
-        oldDelegate.projection.size != projection.size;
+        oldDelegate.projection.size != projection.size ||
+        oldDelegate.visibleTeamIds != visibleTeamIds ||
+        oldDelegate.showUnownedStreets != showUnownedStreets;
   }
 }
 
@@ -436,7 +449,7 @@ class _MapLegend extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = mode == MapLegendMode.teams
-        ? 'Gris : libre\nRouge/Bleu/Vert/Jaune : équipe'
+        ? 'Filtres en haut · gris : libre'
         : 'Gris : à découvrir\nCouleur : rareté trouvée';
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -467,7 +480,7 @@ class _VersionBadge extends StatelessWidget {
       child: const Padding(
         padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Text(
-          'Carte V4 · ratio réel · aucun nom',
+          'Carte V4.2 · ratio Paris fixe · aucun nom',
           style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
         ),
       ),

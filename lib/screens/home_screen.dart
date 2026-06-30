@@ -34,6 +34,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Set<String> _discoveredIds = const {};
   OnlinePlayerProfile? _onlineProfile;
   RueDexClan? _clan;
+  List<ClanSummary> _topClans = const [];
   String? _onlineStatus;
   bool _developerMode = false;
   bool _loading = true;
@@ -45,31 +46,34 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _reload() async {
-    final localIds = await widget.discoveryStore.loadDiscoveredIds();
     final developerMode = await widget.settingsStore.loadDeveloperMode();
     OnlinePlayerProfile? profile;
     RueDexClan? clan;
+    List<ClanSummary> topClans = const [];
     String? onlineStatus;
-    Set<String> discoveredIds = localIds;
+    Set<String> discoveredIds = const {};
 
     if (widget.onlineGameService.isConfigured) {
       try {
         profile = await widget.onlineGameService.currentProfile();
         if (profile == null) {
           onlineStatus = 'Connecte-toi pour jouer en ligne';
+          topClans = await widget.onlineGameService.loadTopClans(limit: 3);
         } else {
-          final onlineIds = await widget.onlineGameService.loadPersonalDiscoveries();
-          if (onlineIds.isNotEmpty) discoveredIds = onlineIds;
+          discoveredIds = await widget.onlineGameService.loadPersonalDiscoveries();
           clan = await widget.onlineGameService.loadMyClan();
+          topClans = await widget.onlineGameService.loadTopClans(limit: 3);
           final team = widget.onlineGameService.teamById(profile.teamId);
           onlineStatus = team == null
               ? 'Compte connecté · aucune équipe choisie'
               : 'Compte connecté · équipe ${team.label}';
         }
       } catch (error) {
+        discoveredIds = const {};
         onlineStatus = 'Serveur configuré mais inaccessible : $error';
       }
     } else {
+      discoveredIds = await widget.discoveryStore.loadDiscoveredIds();
       onlineStatus = 'Mode local · Supabase non configuré';
     }
 
@@ -79,6 +83,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _developerMode = developerMode;
       _onlineProfile = profile;
       _clan = clan;
+      _topClans = topClans;
       _onlineStatus = onlineStatus;
       _loading = false;
     });
@@ -117,6 +122,7 @@ class _HomeScreenState extends State<HomeScreen> {
         builder: (_) => PokedexScreen(
           streets: widget.database.streets,
           discoveryStore: widget.discoveryStore,
+          onlineGameService: widget.onlineGameService,
           developerMode: _developerMode,
         ),
       ),
@@ -304,6 +310,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 onChooseTeam: _chooseTeam,
                 onProfile: _openProfile,
               ),
+              if (_topClans.isNotEmpty) ...[
+                const SizedBox(height: 12),
+                _TopClansPreview(
+                  clans: _topClans,
+                  onlineGameService: widget.onlineGameService,
+                ),
+              ],
               const SizedBox(height: 18),
               FilledButton.icon(
                 onPressed: _openScanner,
@@ -435,6 +448,46 @@ class _OnlineGameCard extends StatelessWidget {
                   ),
               ],
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+
+class _TopClansPreview extends StatelessWidget {
+  const _TopClansPreview({
+    required this.clans,
+    required this.onlineGameService,
+  });
+
+  final List<ClanSummary> clans;
+  final OnlineGameService onlineGameService;
+
+  @override
+  Widget build(BuildContext context) {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Meilleurs clans', style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 8),
+            for (var index = 0; index < clans.length; index++)
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 12,
+                    backgroundColor: onlineGameService.colorForTeam(clans[index].teamId) ?? Colors.grey,
+                    child: Text('${index + 1}', style: const TextStyle(fontSize: 11)),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text('${clans[index].name} [${clans[index].tag}]')),
+                  Text('${clans[index].score} pts'),
+                ],
+              ),
           ],
         ),
       ),

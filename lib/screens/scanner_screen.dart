@@ -290,37 +290,50 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
   Future<void> _completeDiscovery(MatchCandidate candidate) async {
     if (_completed) return;
     _completed = true;
-    final isNew = await widget.discoveryStore.addDiscovery(candidate.street.id);
+
+    var isNew = false;
     CaptureResult? onlineCapture;
+
     if (widget.onlineGameService.isConfigured) {
       try {
         onlineCapture = await widget.onlineGameService.captureStreet(
           candidate: candidate,
           plateScore: _lastPlateCheck?.score ?? 0,
         );
+        isNew = onlineCapture.personalDiscoveryNew;
       } catch (error) {
         onlineCapture = CaptureResult(
           accepted: false,
-          message: 'Capture locale OK, serveur refusé : $error',
+          message: 'Capture serveur refusée : $error',
         );
       }
+    } else {
+      isNew = await widget.discoveryStore.addDiscovery(candidate.street.id);
     }
+
     if (!mounted) return;
     setState(() {
       if (onlineCapture == null) {
         _status = isNew ? 'Rue capturée !' : 'Rue déjà présente dans ton RueDex.';
       } else if (onlineCapture.accepted) {
-        _status = 'Rue capturée pour ton équipe !';
+        _status = onlineCapture.personalDiscoveryNew
+            ? 'Nouvelle rue + conquête mise à jour !'
+            : 'Rue reprise pour ton équipe !';
       } else {
         _status = onlineCapture.message;
       }
     });
 
+    final accepted = onlineCapture?.accepted ?? true;
     await showDialog<void>(
       context: context,
       barrierDismissible: false,
       builder: (context) => AlertDialog(
-        title: Text(isNew ? 'Nouvelle rue découverte !' : 'Rue déjà découverte'),
+        title: Text(
+          accepted
+              ? (isNew ? 'Nouvelle rue découverte !' : 'Rue reprise !')
+              : 'Capture non validée',
+        ),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -331,10 +344,10 @@ class _ScannerScreenState extends State<ScannerScreen> with WidgetsBindingObserv
             if (onlineCapture != null) ...[
               const SizedBox(height: 12),
               Text(onlineCapture.accepted
-                  ? 'Saison : ${onlineCapture.message}'
-                  : 'Saison non mise à jour : ${onlineCapture.message}'),
+                  ? 'Conquête : ${onlineCapture.message}'
+                  : 'Conquête non mise à jour : ${onlineCapture.message}'),
             ],
-            if (candidate.street.hasVerifiedOrigin) ...[
+            if (accepted && candidate.street.hasVerifiedOrigin) ...[
               const SizedBox(height: 16),
               Text(candidate.street.origin),
             ],
