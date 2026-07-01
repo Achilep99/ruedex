@@ -572,6 +572,23 @@ class OnlineGameService {
     return clan;
   }
 
+  Future<RueDexClan> updateClanSettings({
+    required int minDiscoveries,
+  }) async {
+    final client = _requireClient();
+    final response = await client.rpc(
+      'update_clan_settings',
+      params: {'p_min_discoveries': minDiscoveries},
+    );
+    final data = Map<String, dynamic>.from(response as Map);
+    if (data['accepted'] != true) {
+      throw StateError(data['message'] as String? ?? 'Paramètres refusés.');
+    }
+    final clan = await loadMyClan();
+    if (clan == null) throw StateError('Clan mis à jour mais introuvable.');
+    return clan;
+  }
+
   Future<void> leaveClan() async {
     final client = _requireClient();
     final response = await client.rpc('leave_clan');
@@ -625,7 +642,7 @@ class OnlineGameService {
     if (client == null) return const [];
     final rows = await client
         .from('clans')
-        .select('id, name, tag, team_id, min_discoveries, score, level')
+        .select('id, name, tag, team_id, min_discoveries, score, level, member_count')
         .order('score', ascending: false)
         .limit(limit);
     return _parseClanSummaries(rows as List<dynamic>);
@@ -640,7 +657,7 @@ class OnlineGameService {
     final tagPattern = '${query.toUpperCase().replaceAll('%', '').replaceAll('_', '')}%';
     final rows = await client
         .from('clans')
-        .select('id, name, tag, team_id, min_discoveries, score, level')
+        .select('id, name, tag, team_id, min_discoveries, score, level, member_count')
         .or('name.ilike.$pattern,tag.ilike.$tagPattern')
         .order('score', ascending: false)
         .limit(limit);

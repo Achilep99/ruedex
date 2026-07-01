@@ -89,9 +89,9 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
                   return InteractiveViewer(
                     transformationController: _transformationController,
                     minScale: 1,
-                    maxScale: 12,
+                    maxScale: 28,
                     constrained: false,
-                    boundaryMargin: const EdgeInsets.all(180),
+                    boundaryMargin: const EdgeInsets.all(900),
                     child: SizedBox(
                       width: viewport.width,
                       height: viewport.height,
@@ -104,7 +104,7 @@ class _ParisStreetMapState extends State<ParisStreetMap> {
                                 : _nearestVisibleStreet(
                                     details.localPosition,
                                     projection,
-                                    maxDistancePx: 22,
+                                    maxDistancePx: ((16 / _transformationController.value.getMaxScaleOnAxis()).clamp(2.2, 16.0) as num).toDouble(),
                                   );
                             if (street != null) {
                               widget.onStreetTap!(street);
@@ -394,7 +394,7 @@ class _ParisStreetPainter extends CustomPainter {
       Paint()
         ..color = const Color(0xFFB8C0CA).withValues(alpha: 0.24)
         ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.55
+        ..strokeWidth = 0.22
         ..strokeCap = StrokeCap.round,
     );
 
@@ -404,7 +404,7 @@ class _ParisStreetPainter extends CustomPainter {
         Paint()
           ..color = rarityColor(entry.key)
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 2.4
+          ..strokeWidth = 0.9
           ..strokeCap = StrokeCap.round,
       );
     }
@@ -416,7 +416,7 @@ class _ParisStreetPainter extends CustomPainter {
         Paint()
           ..color = color
           ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.0
+          ..strokeWidth = 1.15
           ..strokeCap = StrokeCap.round,
       );
     }
@@ -480,7 +480,7 @@ class _VersionBadge extends StatelessWidget {
       child: const Padding(
         padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         child: Text(
-          'Carte V4.2 · ratio Paris fixe · aucun nom',
+          'Carte V4.3 · rues fines · zoom x28',
           style: TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
         ),
       ),

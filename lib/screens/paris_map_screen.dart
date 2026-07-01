@@ -37,6 +37,7 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
   Map<String, String> _onlineOwnership = const {};
   Set<String> _visibleTeamIds = const {'red', 'blue', 'green', 'yellow'};
   bool _showUnownedStreets = true;
+  bool _filtersExpanded = false;
   String? _status;
 
   bool get _isConquest => widget.mode == ParisMapMode.conquest;
@@ -242,7 +243,7 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
       appBar: AppBar(
         title: Text(title),
         bottom: PreferredSize(
-          preferredSize: Size.fromHeight(_isConquest ? 102 : 52),
+          preferredSize: const Size.fromHeight(58),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
             child: Column(
@@ -257,11 +258,40 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
                 ),
                 const SizedBox(height: 3),
                 Text(subtitle, style: Theme.of(context).textTheme.bodySmall),
-                if (_isConquest) ...[
-                  const SizedBox(height: 8),
-                  _ConquestFilters(
+              ],
+            ),
+          ),
+        ),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(8),
+          child: Stack(
+            children: [
+              Positioned.fill(
+                child: ParisStreetMap(
+                  streets: widget.database.streets,
+                  bounds: widget.database.bounds,
+                  discoveredIds: _isConquest ? const {} : _discoveredIds,
+                  teamOwnership: _isConquest ? _onlineOwnership : const {},
+                  teamColorResolver: widget.onlineGameService.colorForTeam,
+                  visibleTeamIds: _visibleTeamIds,
+                  showUnownedStreets: _isConquest ? _showUnownedStreets : true,
+                  legendMode: _isConquest ? MapLegendMode.teams : MapLegendMode.rarity,
+                  showLegend: !_isConquest,
+                  onStreetTap: _showStreetDetails,
+                ),
+              ),
+              if (_isConquest)
+                Positioned(
+                  left: 10,
+                  right: 10,
+                  bottom: 10,
+                  child: _ConquestFilterPanel(
+                    expanded: _filtersExpanded,
                     visibleTeamIds: _visibleTeamIds,
                     showUnownedStreets: _showUnownedStreets,
+                    onExpandedChanged: (value) => setState(() => _filtersExpanded = value),
                     onTeamChanged: (teamId, enabled) {
                       setState(() {
                         final next = {..._visibleTeamIds};
@@ -275,65 +305,79 @@ class _ParisMapScreenState extends State<ParisMapScreen> {
                     },
                     onUnownedChanged: (value) => setState(() => _showUnownedStreets = value),
                   ),
-                ],
-              ],
-            ),
+                ),
+            ],
           ),
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(10),
-        child: ParisStreetMap(
-          streets: widget.database.streets,
-          bounds: widget.database.bounds,
-          discoveredIds: _isConquest ? const {} : _discoveredIds,
-          teamOwnership: _isConquest ? _onlineOwnership : const {},
-          teamColorResolver: widget.onlineGameService.colorForTeam,
-          visibleTeamIds: _visibleTeamIds,
-          showUnownedStreets: _isConquest ? _showUnownedStreets : true,
-          legendMode: _isConquest ? MapLegendMode.teams : MapLegendMode.rarity,
-          onStreetTap: _showStreetDetails,
         ),
       ),
     );
   }
 }
 
-class _ConquestFilters extends StatelessWidget {
-  const _ConquestFilters({
+class _ConquestFilterPanel extends StatelessWidget {
+  const _ConquestFilterPanel({
+    required this.expanded,
     required this.visibleTeamIds,
     required this.showUnownedStreets,
+    required this.onExpandedChanged,
     required this.onTeamChanged,
     required this.onUnownedChanged,
   });
 
+  final bool expanded;
   final Set<String> visibleTeamIds;
   final bool showUnownedStreets;
+  final ValueChanged<bool> onExpandedChanged;
   final void Function(String teamId, bool enabled) onTeamChanged;
   final ValueChanged<bool> onUnownedChanged;
 
   @override
   Widget build(BuildContext context) {
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          for (final team in OnlineGameService.teams) ...[
-            FilterChip(
-              selected: visibleTeamIds.contains(team.id),
-              label: Text(team.label),
-              avatar: CircleAvatar(backgroundColor: team.color),
-              onSelected: (value) => onTeamChanged(team.id, value),
+    return Card(
+      elevation: 8,
+      color: Theme.of(context).colorScheme.surface.withValues(alpha: 0.94),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const Icon(Icons.filter_alt_outlined, size: 18),
+                const SizedBox(width: 8),
+                const Expanded(child: Text('Filtres de conquête', style: TextStyle(fontWeight: FontWeight.w800))),
+                TextButton.icon(
+                  onPressed: () => onExpandedChanged(!expanded),
+                  icon: Icon(expanded ? Icons.expand_more : Icons.expand_less),
+                  label: Text(expanded ? 'Réduire' : 'Ouvrir'),
+                ),
+              ],
             ),
-            const SizedBox(width: 6),
+            if (expanded) ...[
+              const SizedBox(height: 4),
+              Wrap(
+                spacing: 7,
+                runSpacing: 4,
+                children: [
+                  for (final team in OnlineGameService.teams)
+                    FilterChip(
+                      selected: visibleTeamIds.contains(team.id),
+                      label: Text(team.label),
+                      avatar: CircleAvatar(backgroundColor: team.color),
+                      onSelected: (value) => onTeamChanged(team.id, value),
+                    ),
+                  FilterChip(
+                    selected: showUnownedStreets,
+                    label: const Text('Non capturées'),
+                    avatar: const CircleAvatar(backgroundColor: Colors.grey),
+                    onSelected: onUnownedChanged,
+                  ),
+                ],
+              ),
+            ],
           ],
-          FilterChip(
-            selected: showUnownedStreets,
-            label: const Text('Non capturées'),
-            avatar: const CircleAvatar(backgroundColor: Colors.grey),
-            onSelected: onUnownedChanged,
-          ),
-        ],
+        ),
       ),
     );
   }

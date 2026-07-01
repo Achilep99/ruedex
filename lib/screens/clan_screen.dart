@@ -156,6 +156,50 @@ class _ClanScreenState extends State<ClanScreen> {
     });
   }
 
+  Future<void> _openClanSettings(RueDexClan clan) async {
+    final controller = TextEditingController(text: '${clan.minDiscoveries}');
+    final value = await showDialog<int>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Paramètres du clan'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(clan.name, style: Theme.of(context).textTheme.titleMedium),
+            const SizedBox(height: 14),
+            TextField(
+              controller: controller,
+              keyboardType: TextInputType.number,
+              decoration: const InputDecoration(
+                labelText: 'Rues perso minimum pour rejoindre',
+                helperText: '0 = clan ouvert aux joueurs de ton équipe',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Annuler'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final parsed = int.tryParse(controller.text.trim()) ?? 0;
+              Navigator.of(context).pop(parsed.clamp(0, 9999));
+            },
+            child: const Text('Enregistrer'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (value == null) return;
+    await _runSaving(() async {
+      await widget.onlineGameService.updateClanSettings(minDiscoveries: value);
+    });
+  }
+
   Future<void> _postMessage() async {
     final content = _messageController.text.trim();
     if (content.isEmpty) return;
@@ -256,6 +300,14 @@ class _ClanScreenState extends State<ClanScreen> {
                   teamColor: team?.color ?? Colors.grey,
                   scores: _scores,
                 ),
+                if (clan.isOwner) ...[
+                  const SizedBox(height: 10),
+                  FilledButton.tonalIcon(
+                    onPressed: _saving ? null : () => _openClanSettings(clan),
+                    icon: const Icon(Icons.tune),
+                    label: const Text('Paramètres du clan'),
+                  ),
+                ],
                 const SizedBox(height: 14),
                 _ClanJournalCard(entries: _journal),
                 const SizedBox(height: 14),

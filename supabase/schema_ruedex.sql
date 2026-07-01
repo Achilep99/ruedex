@@ -740,6 +740,45 @@ begin
 end;
 $$;
 
+
+-- Le chef peut modifier les paramètres simples du clan.
+drop function if exists public.update_clan_settings(integer);
+create or replace function public.update_clan_settings(p_min_discoveries integer)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_player public.players%rowtype;
+  v_min integer;
+begin
+  if auth.uid() is null then
+    return jsonb_build_object('accepted', false, 'message', 'Joueur non connecté.');
+  end if;
+
+  select * into v_player from public.players where id = auth.uid();
+  if not found or v_player.clan_id is null then
+    return jsonb_build_object('accepted', false, 'message', 'Tu n’es pas dans un clan.');
+  end if;
+
+  if not exists (
+    select 1 from public.clan_members
+    where clan_id = v_player.clan_id and player_id = v_player.id and role = 'owner'
+  ) then
+    return jsonb_build_object('accepted', false, 'message', 'Seul le chef peut modifier les paramètres du clan.');
+  end if;
+
+  v_min := greatest(0, least(coalesce(p_min_discoveries, 0), 9999));
+  update public.clans
+  set min_discoveries = v_min,
+      updated_at = now()
+  where id = v_player.clan_id;
+
+  return jsonb_build_object('accepted', true, 'message', 'Paramètres du clan mis à jour.');
+end;
+$$;
+
 -- Le chef peut expulser un membre de son clan.
 drop function if exists public.kick_clan_member(uuid);
 create or replace function public.kick_clan_member(p_player_id uuid)
@@ -1035,6 +1074,7 @@ end;
 $$;
 
 grant execute on function public.create_clan(text, text, integer) to authenticated;
+grant execute on function public.update_clan_settings(integer) to authenticated;
 grant execute on function public.kick_clan_member(uuid) to authenticated;
 grant execute on function public.post_clan_message(text) to authenticated;
 grant execute on function public.report_clan_message(uuid, text) to authenticated;
